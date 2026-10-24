@@ -61,13 +61,15 @@ export const generateQuizBodyQuestionCountDefault = 5;
 export const generateQuizBodyQuestionCountMax = 30;
 
 export const generateQuizBodyDifficultyDefault = `medium`;
+export const generateQuizBodyPreviousQuestionsMax = 60;
 
 export const GenerateQuizBody = zod.object({
   "title": zod.string().max(generateQuizBodyTitleMax).optional(),
   "transcript": zod.string().min(1).max(generateQuizBodyTranscriptMax),
   "questionType": zod.enum(['mcq', 'short_answer', 'mixed']).default(generateQuizBodyQuestionTypeDefault),
   "questionCount": zod.number().int().min(1).max(generateQuizBodyQuestionCountMax).default(generateQuizBodyQuestionCountDefault),
-  "difficulty": zod.enum(['easy', 'medium', 'hard', 'mixed']).default(generateQuizBodyDifficultyDefault)
+  "difficulty": zod.enum(['easy', 'medium', 'hard', 'mixed']).default(generateQuizBodyDifficultyDefault),
+  "previousQuestions": zod.array(zod.string().min(1).max(500)).max(generateQuizBodyPreviousQuestionsMax).optional()
 })
 
 export const generateQuizResponseQuestionsItemTypeDefault = `mcq`;

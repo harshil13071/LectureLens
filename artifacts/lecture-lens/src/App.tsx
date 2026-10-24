@@ -38,15 +38,28 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function getMaterialKey(mode: 'paste' | 'upload', material: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < material.length; index++) {
+    hash = Math.imul(hash ^ material.charCodeAt(index), 16777619);
+  }
+  return `${mode}:${material.length}:${hash >>> 0}`;
+}
+
 function Home() {
   const [materialMode, setMaterialMode] = useState<'paste' | 'upload'>('paste');
   const [title, setTitle] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
-  const [transcript, setTranscript] = useState('');
+  const [pastedTranscript, setPastedTranscript] = useState('');
+  const [uploadedStudyMaterial, setUploadedStudyMaterial] = useState('');
   const [question, setQuestion] = useState('');
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | string>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [generatingMore, setGeneratingMore] = useState(false);
+  const [questionHistory, setQuestionHistory] = useState<Record<string, string[]>>({});
+  const [lastCompletedQuiz, setLastCompletedQuiz] = useState<Awaited<ReturnType<ReturnType<typeof useGenerateQuiz>['mutateAsync']>>>();
+  const [quizResultSourceKey, setQuizResultSourceKey] = useState('');
   const [questionType, setQuestionType] = useState<'mcq' | 'short_answer' | 'mixed'>('mcq');
   const [questionCount, setQuestionCount] = useState('5');
   const [customQuestionCount, setCustomQuestionCount] = useState('');
@@ -64,17 +77,23 @@ function Home() {
   const evaluateAnswer = useEvaluateShortAnswer();
   const documentExtraction = useExtractDocumentText();
   const ask = useAskLecture();
+  const transcript = materialMode === 'upload' ? uploadedStudyMaterial : pastedTranscript;
   const ready = transcript.trim().length > 0;
   const lengthLabel = `${transcript.length.toLocaleString()} / 40,000`;
+  const sourceKey = getMaterialKey(materialMode, transcript.trim());
 
   const clearWorkspace = () => {
     setTitle('');
     setYoutubeUrl('');
-    setTranscript('');
+    setPastedTranscript('');
+    setUploadedStudyMaterial('');
     setQuestion('');
     setChatHistory([]);
     setSelectedAnswers({});
     setQuizSubmitted(false);
+    setQuestionHistory({});
+    setLastCompletedQuiz(undefined);
+    setQuizResultSourceKey('');
     setCopied(false);
     setSelectedDocument(null);
     setUploadError('');
@@ -106,7 +125,7 @@ function Home() {
       {
         onSuccess: (result) => {
           uploadInFlightRef.current = false;
-          setTranscript(result.text.slice(0, 40000));
+          setUploadedStudyMaterial(result.text.slice(0, 40000));
           setUploadError('');
         },
         onError: () => {
@@ -119,7 +138,7 @@ function Home() {
   const removeDocument = () => {
     if (uploadInFlightRef.current || documentExtraction.isPending) return;
     setSelectedDocument(null);
-    setTranscript('');
+    setUploadedStudyMaterial('');
     setUploadError('');
     documentExtraction.reset();
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -130,21 +149,38 @@ function Home() {
     notes.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), youtubeUrl: youtubeUrl.trim() || undefined } });
   };
 
-  const makeQuiz = () => {
+  const makeQuiz = (more = false) => {
     const count = questionCount === 'custom' ? Number(customQuestionCount) : Number(questionCount);
     if (!ready || quiz.isPending || !Number.isInteger(count) || count < 1 || count > 30) return;
-    setSelectedAnswers({});
-    setEvaluations({});
-    setEvaluationError('');
-    setQuizSubmitted(false);
-    quiz.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), questionType, questionCount: count, difficulty } });
+    const priorQuestions = questionHistory[sourceKey] ?? [];
+    if (!more) {
+      setSelectedAnswers({});
+      setEvaluations({});
+      setEvaluationError('');
+      setQuizSubmitted(false);
+      setLastCompletedQuiz(undefined);
+    }
+    setGeneratingMore(more);
+    quiz.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), questionType, questionCount: count, difficulty, ...(priorQuestions.length ? { previousQuestions: priorQuestions.slice(-60) } : {}) } }, {
+      onSuccess: (result) => {
+        setQuestionHistory((current) => ({ ...current, [sourceKey]: [...new Set([...(current[sourceKey] ?? []), ...result.questions.map((item) => item.question)])] }));
+        setLastCompletedQuiz(result);
+        setQuizResultSourceKey(sourceKey);
+        setSelectedAnswers({});
+        setEvaluations({});
+        setEvaluationError('');
+        setQuizSubmitted(false);
+        setGeneratingMore(false);
+      },
+    });
   };
-  const score = quiz.data?.questions.reduce((total, item, index) => total + (item.type === 'short_answer' ? (evaluations[index]?.isCorrect ? 1 : 0) : (selectedAnswers[index] === item.correctIndex ? 1 : 0)), 0) ?? 0;
+  const displayQuiz = quizResultSourceKey === sourceKey ? (quiz.data ?? (generatingMore ? lastCompletedQuiz : undefined)) : undefined;
+  const score = displayQuiz?.questions.reduce((total, item, index) => total + (item.type === 'short_answer' ? (evaluations[index]?.isCorrect ? 1 : 0) : (selectedAnswers[index] === item.correctIndex ? 1 : 0)), 0) ?? 0;
   const submitQuiz = async () => {
-    if (!quiz.data || evaluateAnswer.isPending) return;
+    if (!displayQuiz || evaluateAnswer.isPending) return;
     setEvaluationError('');
     try {
-      const shortAnswers = await Promise.all(quiz.data.questions.map(async (item, index) => {
+      const shortAnswers = await Promise.all(displayQuiz.questions.map(async (item, index) => {
         if (item.type !== 'short_answer') return null;
         return evaluateAnswer.mutateAsync({ data: { question: item.question, studentAnswer: String(selectedAnswers[index] ?? ''), expectedAnswer: item.expectedAnswer ?? '', keyPoints: item.keyPoints ?? [] } }).then((result) => [index, result] as const);
       }));
@@ -273,19 +309,19 @@ function Home() {
               <input id="youtube-url" data-testid="input-youtube-url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} maxLength={2048} placeholder="https://youtube.com/watch?v=..." className="h-11 w-full rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] pl-10 pr-3.5 text-[14px] text-[#302d48] outline-none transition focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10" />
             </div>
             <div className="mt-5 inline-flex rounded-xl border border-[#e8e6ef] bg-[#f8f7fb] p-1" role="tablist" aria-label="Study material source">
-              <button type="button" role="tab" aria-selected={materialMode === 'paste'} onClick={() => setMaterialMode('paste')} data-testid="tab-paste-text" className={`rounded-lg px-3.5 py-2 text-[12px] font-bold transition ${materialMode === 'paste' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:text-[#5c4bc1]'}`}>Paste Text</button>
-              <button type="button" role="tab" aria-selected={materialMode === 'upload'} onClick={() => setMaterialMode('upload')} data-testid="tab-upload-document" className={`rounded-lg px-3.5 py-2 text-[12px] font-bold transition ${materialMode === 'upload' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:text-[#5c4bc1]'}`}>Upload Document</button>
+              <button type="button" role="tab" aria-selected={materialMode === 'paste'} onClick={() => setMaterialMode('paste')} data-testid="tab-paste-text" className={`rounded-lg px-4 py-2.5 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7765df] focus-visible:ring-offset-2 ${materialMode === 'paste' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:bg-white/70 hover:text-[#5c4bc1]'}`}>Paste Text</button>
+              <button type="button" role="tab" aria-selected={materialMode === 'upload'} onClick={() => setMaterialMode('upload')} data-testid="tab-upload-document" className={`rounded-lg px-4 py-2.5 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7765df] focus-visible:ring-offset-2 ${materialMode === 'upload' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:bg-white/70 hover:text-[#5c4bc1]'}`}>Upload Document</button>
             </div>
             <div className="mb-2 mt-5 flex items-center justify-between">
               <label className="text-[12px] font-bold text-[#4b4861]" htmlFor="lecture-transcript">{materialMode === 'paste' ? 'Transcript' : 'Study material'}</label>
               <div className="flex items-center gap-3">
                 <span data-testid="text-transcript-count" className={`font-mono text-[10px] font-medium ${transcript.length > 40000 ? 'text-red-500' : 'text-[#aaa6b7]'}`}>{lengthLabel}</span>
-                <button type="button" data-testid="button-clear-transcript" onClick={clearWorkspace} disabled={documentExtraction.isPending || (!title && !youtubeUrl && !transcript && !selectedDocument && !question && !notes.data && !quiz.data && !ask.data)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8177a4] transition hover:text-[#6754d9] disabled:cursor-not-allowed disabled:opacity-40">
+                <button type="button" data-testid="button-clear-transcript" onClick={clearWorkspace} disabled={documentExtraction.isPending || (!title && !youtubeUrl && !pastedTranscript && !uploadedStudyMaterial && !selectedDocument && !question && !notes.data && !quiz.data && !ask.data)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8177a4] transition hover:text-[#6754d9] disabled:cursor-not-allowed disabled:opacity-40">
                   <X size={13} /> Clear
                 </button>
               </div>
             </div>
-            {materialMode === 'paste' ? <textarea id="lecture-transcript" data-testid="input-lecture-transcript" value={transcript} onChange={(event) => setTranscript(event.target.value.slice(0, 40000))} placeholder="Paste your lecture transcript here. The more context you include, the more useful your study materials will be." className="min-h-[190px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-4 text-[14px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10 sm:min-h-[220px]" /> : <div className="space-y-3">
+            {materialMode === 'paste' ? <textarea id="lecture-transcript" data-testid="input-lecture-transcript" value={pastedTranscript} onChange={(event) => setPastedTranscript(event.target.value.slice(0, 40000))} placeholder="Paste your lecture transcript here. The more context you include, the more useful your study materials will be." className="min-h-[190px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-4 text-[14px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10 sm:min-h-[220px]" /> : <div className="space-y-3">
               <input ref={fileInputRef} type="file" accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" data-testid="input-study-document" disabled={documentExtraction.isPending} onChange={(event) => { handleDocumentFile(event.target.files?.[0]); event.currentTarget.value = ''; }} />
               {!selectedDocument && <div onDragEnter={(event) => { event.preventDefault(); setIsDraggingDocument(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { event.preventDefault(); setIsDraggingDocument(false); }} onDrop={(event) => { event.preventDefault(); setIsDraggingDocument(false); handleDocumentFile(event.dataTransfer.files?.[0]); }} className={`rounded-2xl border-2 border-dashed px-5 py-7 text-center transition ${isDraggingDocument ? 'border-[#8b79df] bg-[#f1edff]' : 'border-[#ded9ed] bg-[#fbfaff]'}`}>
                 <div className="mx-auto grid h-11 w-11 place-items-center rounded-[14px] bg-white text-[#7665cf] shadow-sm"><FileUp size={20} /></div>
@@ -300,8 +336,8 @@ function Home() {
                 </div>
                 {documentExtraction.data && <>
                   {documentExtraction.data.warning && <p role="status" className="mt-3 rounded-lg border border-[#f0dfb8] bg-[#fffaf0] px-3 py-2 text-[11px] leading-5 text-[#856b35]">{documentExtraction.data.warning}</p>}
-                  <label htmlFor="lecture-transcript" className="mb-2 mt-4 block text-[11px] font-bold text-[#5b5672]">Review and edit extracted text <span className="font-medium text-[#9691a5]">· changes are used for Notes, Quiz, and Ask</span></label>
-                  <textarea id="lecture-transcript" data-testid="input-lecture-transcript" value={transcript} onChange={(event) => setTranscript(event.target.value.slice(0, 40000))} maxLength={40000} className="min-h-[190px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-white p-4 text-[13px] leading-6 text-[#302d48] outline-none transition focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10 sm:min-h-[220px]" />
+                  <label htmlFor="uploaded-study-material" className="mb-2 mt-4 block text-[11px] font-bold text-[#5b5672]">Review and edit extracted text <span className="font-medium text-[#9691a5]">· changes are used for Notes, Quiz, and Ask</span></label>
+                  <textarea id="uploaded-study-material" data-testid="input-uploaded-study-material" value={uploadedStudyMaterial} onChange={(event) => setUploadedStudyMaterial(event.target.value.slice(0, 40000))} maxLength={40000} className="min-h-[190px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-white p-4 text-[13px] leading-6 text-[#302d48] outline-none transition focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10 sm:min-h-[220px]" />
                   <p className="mt-1.5 text-right text-[10px] text-[#9994aa]">{transcript.length.toLocaleString()} / 40,000 characters</p>
                 </>}
               </div>}
@@ -364,14 +400,14 @@ function Home() {
               </div>
               {questionCount === 'custom' && customQuestionCount !== '' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30) && <p role="alert" className="mt-2 text-[11px] text-[#a94e48]">Enter a whole number from 1 to 30.</p>}
             </div>
-            <button type="button" data-testid="button-generate-quiz" onClick={makeQuiz} disabled={!ready || quiz.isPending || (questionCount === 'custom' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30))} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[13px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{quiz.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}{quiz.isPending ? 'Generating quiz…' : 'Generate Quiz'}</button>
-            {!ready && !quiz.data && <p className="mt-2 text-center text-[11px] text-[#908c9f]">Add a transcript above to enable quiz generation.</p>}
-            {!quiz.data && !quiz.isPending && <div className="mt-4 rounded-xl border border-dashed border-[#ded9ed] bg-white px-4 py-4 text-center"><p className="text-[13px] font-semibold text-[#68637d]">Your practice quiz will appear here.</p></div>}
+            <button type="button" data-testid="button-generate-quiz" onClick={() => makeQuiz()} disabled={!ready || quiz.isPending || (questionCount === 'custom' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30))} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[13px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{quiz.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}{quiz.isPending ? 'Generating quiz…' : 'Generate Quiz'}</button>
+            {!ready && !displayQuiz && <p className="mt-2 text-center text-[11px] text-[#908c9f]">Add a transcript above to enable quiz generation.</p>}
+            {!displayQuiz && !quiz.isPending && <div className="mt-4 rounded-xl border border-dashed border-[#ded9ed] bg-white px-4 py-4 text-center"><p className="text-[13px] font-semibold text-[#68637d]">Your practice quiz will appear here.</p></div>}
             {quiz.isPending && <div className="mt-5 space-y-3" aria-label="Building quiz">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-[#f4f2f8]" />)}</div>}
             {quiz.isError && <div role="alert" className="mt-4 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] p-3 text-[12px] text-[#a94e48]">{getApiErrorMessage(quiz.error, 'The quiz could not be generated. Please try again.')}</div>}
-            {quiz.data && <div className="mt-5">
-              {quizSubmitted && <div className="mb-5 flex items-center justify-between rounded-xl bg-[#f3f0ff] px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[.12em] text-[#796cc1]">Your score</p><p className="mt-0.5 font-display text-[21px] font-extrabold text-[#453b80]">{score} <span className="text-[13px] font-semibold text-[#827aa7]">/ {quiz.data.questions.length}</span></p></div><button onClick={() => { setSelectedAnswers({}); setQuizSubmitted(false); }} data-testid="button-retry-quiz" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#6f5ec7]"><RotateCcw size={14} /> Try again</button></div>}
-              <div className="space-y-5">{quiz.data.questions.map((item, index) => {
+            {displayQuiz && <div className="mt-5">
+              {quizSubmitted && <div className="mb-5 flex items-center justify-between rounded-xl bg-[#f3f0ff] px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[.12em] text-[#796cc1]">Your score</p><p className="mt-0.5 font-display text-[21px] font-extrabold text-[#453b80]">{score} <span className="text-[13px] font-semibold text-[#827aa7]">/ {displayQuiz.questions.length}</span></p></div><button onClick={() => { setSelectedAnswers({}); setQuizSubmitted(false); }} data-testid="button-retry-quiz" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#6f5ec7]"><RotateCcw size={14} /> Try again</button></div>}
+              <div className="space-y-5">{displayQuiz.questions.map((item, index) => {
                 const picked = selectedAnswers[index];
                 const isShortAnswer = item.type === 'short_answer';
                 const answeredCorrectly = isShortAnswer ? evaluations[index]?.isCorrect : picked === item.correctIndex;
@@ -390,7 +426,9 @@ function Home() {
                 </article>;
               })}</div>
               {evaluationError && <p role="alert" className="mt-3 text-[12px] text-[#a94e48]">{evaluationError}</p>}
-              {!quizSubmitted && <button data-testid="button-submit-quiz" onClick={submitQuiz} disabled={quiz.data.questions.some((item, index) => item.type === 'short_answer' ? !String(selectedAnswers[index] ?? '').trim() : selectedAnswers[index] === undefined) || evaluateAnswer.isPending} className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{evaluateAnswer.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}{evaluateAnswer.isPending ? 'Evaluating answers…' : 'Check my answers'}</button>}
+              {!quizSubmitted && <button data-testid="button-submit-quiz" onClick={submitQuiz} disabled={displayQuiz.questions.some((item, index) => item.type === 'short_answer' ? !String(selectedAnswers[index] ?? '').trim() : selectedAnswers[index] === undefined) || evaluateAnswer.isPending} className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{evaluateAnswer.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}{evaluateAnswer.isPending ? 'Evaluating answers…' : 'Check my answers'}</button>}
+              {quizSubmitted && <button type="button" data-testid="button-generate-more-questions" onClick={() => makeQuiz(true)} disabled={quiz.isPending} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#dcd5f7] bg-[#f8f6ff] text-[12px] font-bold text-[#6655c6] transition hover:bg-[#f0edff] disabled:cursor-not-allowed disabled:opacity-50">{quiz.isPending && generatingMore ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}{quiz.isPending && generatingMore ? 'Generating more questions…' : 'Generate More Questions'}</button>}
+              {quiz.isError && generatingMore && <button type="button" onClick={() => makeQuiz(true)} disabled={quiz.isPending} className="mt-2 w-full text-center text-[11px] font-bold text-[#6f5ec7] underline disabled:opacity-50">Retry generating more questions</button>}
             </div>}
           </div>
 

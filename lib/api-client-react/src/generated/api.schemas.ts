@@ -55,6 +55,7 @@ export interface QuizInput {
      */
   questionCount?: number;
   difficulty?: QuizInputDifficulty;
+  previousQuestions?: string[];
 }
 
 export interface EvaluateAnswerInput {

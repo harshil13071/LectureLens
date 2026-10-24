@@ -76,6 +76,31 @@ Return a JSON object matching this structure:
 }`;
 }
 
+function questionSimilarity(left: string, right: string): number {
+  const ignored = new Set(['about', 'after', 'again', 'from', 'into', 'what', 'when', 'where', 'which', 'while', 'with', 'would', 'could', 'should', 'does', 'this', 'that', 'these', 'those', 'their', 'there', 'then', 'than', 'have', 'your', 'explain', 'describe', 'identify', 'according', 'material']);
+  const normalizedLeft = left.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const normalizedRight = right.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (normalizedLeft === normalizedRight) return 1;
+  const tokens = (value: string) => new Set(value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter((word) => (word.length > 2 || /^\d+$/.test(word)) && !ignored.has(word)));
+  const a = tokens(left);
+  const b = tokens(right);
+  if (!a.size || !b.size) return 0;
+  if (Math.min(a.size, b.size) < 3) return 0;
+  let overlap = 0;
+  for (const token of a) if (b.has(token)) overlap++;
+  const jaccard = overlap / (a.size + b.size - overlap);
+  return Math.max(jaccard, overlap >= 4 ? Math.max(overlap / a.size, overlap / b.size) : 0);
+}
+
+function containsDuplicateQuestions(questions: string[], previousQuestions: string[]): boolean {
+  const seen = [...previousQuestions];
+  for (const question of questions) {
+    if (seen.some((prior) => questionSimilarity(question, prior) >= 0.72)) return true;
+    seen.push(question);
+  }
+  return false;
+}
+
 function sendAiSuccess(
   req: Request,
   res: Response,
@@ -216,6 +241,7 @@ router.post("/quiz", async (req, res): Promise<void> => {
     questionType = "mcq",
     questionCount = 5,
     difficulty = "medium",
+    previousQuestions = [],
   } = parsed.data;
 
   const trimmedTranscript = transcript.trim();
@@ -235,41 +261,49 @@ router.post("/quiz", async (req, res): Promise<void> => {
     const userPrompt = trimmedTitle
       ? `Study Material Title: "${trimmedTitle}"\n\nContent:\n${trimmedTranscript}`
       : `Study Material:\n${trimmedTranscript}`;
+    const historyPrompt = previousQuestions.length
+      ? `\n\nPreviously asked questions (do not repeat or closely paraphrase any):\n${previousQuestions.map((question, index) => `${index + 1}. ${question}`).join("\n")}`
+      : "";
 
     // Scale token budget dynamically with question count
     const maxTokens = Math.min(4000, Math.max(1200, validCount * 220));
 
-    const rawResult = await requestLectureLensJson(
-      systemPrompt,
-      userPrompt,
-      [],
-      {
-        maxTokens,
-        operation: "quiz",
-        onDiagnostics: (d) => {
-          diagnostics = d;
+    let rawResult: unknown;
+    let validated: ReturnType<typeof GenerateQuizResponse.parse> | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      rawResult = await requestLectureLensJson(
+        `${systemPrompt}${previousQuestions.length ? " Exclude every prior question and close paraphrase listed in the study material prompt." : ""}`,
+        `${userPrompt}${historyPrompt}${attempt ? "\n\nRegenerate the full quiz. The previous response included repeated questions; create genuinely different questions." : ""}`,
+        [],
+        {
+          maxTokens,
+          operation: "quiz",
+          onDiagnostics: (d) => { diagnostics = d; },
         },
-      },
-    );
+      );
 
-    // Normalize questions to match schema
-    const resultObj = rawResult as Record<string, unknown>;
-    if (Array.isArray(resultObj.questions)) {
-      resultObj.questions = resultObj.questions.map((q: Record<string, unknown>) => ({
-        type: q.type === "short_answer" ? "short_answer" : "mcq",
-        question: typeof q.question === "string" ? q.question : "Question",
-        options: Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : undefined,
-        correctIndex: typeof q.correctIndex === "number" ? q.correctIndex : undefined,
-        expectedAnswer: typeof q.expectedAnswer === "string" ? q.expectedAnswer : undefined,
-        keyPoints: Array.isArray(q.keyPoints) ? q.keyPoints.map(String) : undefined,
-        explanation: typeof q.explanation === "string" ? q.explanation : "Grounded in study material.",
-      }));
+      const resultObj = rawResult as Record<string, unknown>;
+      if (Array.isArray(resultObj.questions)) {
+        resultObj.questions = resultObj.questions.map((q: Record<string, unknown>) => ({
+          type: q.type === "short_answer" ? "short_answer" : "mcq",
+          question: typeof q.question === "string" ? q.question : "Question",
+          options: Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : undefined,
+          correctIndex: typeof q.correctIndex === "number" ? q.correctIndex : undefined,
+          expectedAnswer: typeof q.expectedAnswer === "string" ? q.expectedAnswer : undefined,
+          keyPoints: Array.isArray(q.keyPoints) ? q.keyPoints.map(String) : undefined,
+          explanation: typeof q.explanation === "string" ? q.explanation : "Grounded in study material.",
+        }));
+      }
+      const candidate = GenerateQuizResponse.parse(resultObj);
+      if (candidate.questions.length !== validCount) throw new Error(`Quiz generation returned ${candidate.questions.length} questions; ${validCount} were requested.`);
+      if (containsDuplicateQuestions(candidate.questions.map((item) => item.question), previousQuestions)) {
+        if (attempt === 1) throw new Error("The material did not support enough distinct questions for this quiz. Try a smaller question count or different study material.");
+        continue;
+      }
+      validated = candidate;
+      break;
     }
-
-    const validated = GenerateQuizResponse.parse(resultObj);
-    if (validated.questions.length !== validCount) {
-      throw new Error(`Quiz generation returned ${validated.questions.length} questions; ${validCount} were requested.`);
-    }
+    if (!validated) throw new Error("The material did not support enough distinct questions for this quiz. Try a smaller question count or different study material.");
     const generatedTypes = new Set(validated.questions.map((question) => question.type ?? "mcq"));
     if (questionType === "mixed") {
       if (!generatedTypes.has("mcq") || !generatedTypes.has("short_answer")) {

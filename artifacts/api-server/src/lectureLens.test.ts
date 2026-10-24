@@ -341,7 +341,7 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
   let mockCallCount = 0;
   let lastRequestBody: Record<string, unknown> | null = null;
   let returnStatus = 200;
-  let returnPayload: unknown = null;
+  let returnPayload: unknown | ((callCount: number) => unknown) = null;
   let returnHeaders: Record<string, string> = { "Content-Type": "application/json" };
 
   const mockGroqServer = http.createServer(async (req, res) => {
@@ -359,7 +359,7 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
       res.setHeader(k, v);
     }
     res.statusCode = returnStatus;
-    res.end(JSON.stringify(returnPayload));
+    res.end(JSON.stringify(typeof returnPayload === "function" ? returnPayload(mockCallCount) : returnPayload));
   });
 
   await new Promise<void>((resolve) => mockGroqServer.listen(0, resolve));
@@ -614,6 +614,46 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
       assert.equal(mockCallCount, 2);
       assert.equal(repeatedData.questions[0].question, "Fresh response 1");
     }
+
+    mockCallCount = 0;
+    returnPayload = (callCount: number) => ({
+      choices: [{ message: { content: JSON.stringify({
+        questions: [{
+          type: "mcq",
+          question: callCount === 1 ? "What does the MMU translate?" : "How does the OS respond to a page fault?",
+          options: ["A", "B", "C", "D"],
+          correctIndex: 1,
+          explanation: "Grounded in the lecture.",
+        }],
+      }) } }],
+    });
+    const additionalRes = await fetch(`${baseUrl}/quiz`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript: REALISTIC_LECTURE_TRANSCRIPT, questionCount: 1, questionType: "mcq", difficulty: "hard", previousQuestions: ["What does the MMU translate?"] }),
+    });
+    assert.equal(additionalRes.status, 200);
+    assert.equal(mockCallCount, 2);
+    const additionalData = await additionalRes.json() as { questions: Array<{ question: string }> };
+    assert.equal(additionalData.questions[0].question, "How does the OS respond to a page fault?");
+    const additionalPrompt = (lastRequestBody?.messages as Array<{ role: string; content: string }>)[1].content;
+    assert.match(additionalPrompt, /What does the MMU translate\?/);
+
+    mockCallCount = 0;
+    returnPayload = {
+      choices: [{ message: { content: JSON.stringify({
+        questions: [{ type: "mcq", question: "What does the MMU translate?", options: ["A", "B", "C", "D"], correctIndex: 1, explanation: "Grounded." }],
+      }) } }],
+    };
+    const duplicateRes = await fetch(`${baseUrl}/quiz`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript: REALISTIC_LECTURE_TRANSCRIPT, questionCount: 1, previousQuestions: ["What does the MMU translate?"] }),
+    });
+    assert.equal(duplicateRes.status, 502);
+    assert.equal(mockCallCount, 2, "duplicate rejection retries only once");
+    const duplicateBody = await duplicateRes.json() as { error: string };
+    assert.match(duplicateBody.error, /not support enough distinct questions/);
 
     mockCallCount = 0;
     returnPayload = {
