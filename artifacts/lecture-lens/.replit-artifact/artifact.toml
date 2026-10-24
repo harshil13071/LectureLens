@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "LectureLens"
+description = "An AI study assistant for college students that turns pasted lecture transcripts into structured notes, quizzes, and transcript-grounded answers."
+version = "1.0.0"
+id = "artifacts/lecture-lens"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25348
+
+[services.development]
+run = "pnpm --filter @workspace/lecture-lens run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/lecture-lens", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/lecture-lens/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25348"
+BASE_PATH = "/"

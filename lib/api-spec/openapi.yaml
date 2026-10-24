@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: lecture-lens
+    description: Transcript-based study tools
 paths:
   /healthz:
     get:
@@ -24,6 +26,150 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /study-notes:
+    post:
+      operationId: generateStudyNotes
+      tags: [lecture-lens]
+      summary: Generate study notes from a lecture transcript
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudyNotesInput"
+      responses:
+        "200":
+          description: Generated study notes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyNotes"
+        "400":
+          description: Invalid transcript
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: AI provider is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: AI provider rate limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: AI provider request failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "504":
+          description: AI provider request timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /quiz:
+    post:
+      operationId: generateQuiz
+      tags: [lecture-lens]
+      summary: Generate a five-question quiz from a lecture transcript
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuizInput"
+      responses:
+        "200":
+          description: Generated quiz
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+        "400":
+          description: Invalid transcript
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: AI provider is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: AI provider rate limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: AI provider request failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "504":
+          description: AI provider request timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /ask:
+    post:
+      operationId: askLecture
+      tags: [lecture-lens]
+      summary: Answer a question using a lecture transcript
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LectureQuestionInput"
+      responses:
+        "200":
+          description: Transcript-grounded answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LectureAnswer"
+        "400":
+          description: Invalid transcript or question
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: AI provider is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: AI provider rate limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: AI provider request failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "504":
+          description: AI provider request timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +179,148 @@ components:
           type: string
       required:
         - status
+    StudyNotesInput:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        transcript:
+          type: string
+          minLength: 1
+          maxLength: 40000
+        youtubeUrl:
+          type: string
+          maxLength: 2048
+      required:
+        - transcript
+    QuizInput:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        transcript:
+          type: string
+          minLength: 1
+          maxLength: 40000
+      required:
+        - transcript
+    LectureQuestionInput:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        transcript:
+          type: string
+          minLength: 1
+          maxLength: 40000
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+        - transcript
+        - question
+    StudyNotes:
+      type: object
+      properties:
+        overview:
+          type: string
+        topics:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopicNotes"
+        keyConcepts:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyConcept"
+        takeaways:
+          type: array
+          items:
+            type: string
+        quickRevision:
+          type: string
+      required:
+        - overview
+        - topics
+        - keyConcepts
+        - takeaways
+        - quickRevision
+    TopicNotes:
+      type: object
+      properties:
+        title:
+          type: string
+        notes:
+          type: array
+          items:
+            type: string
+      required:
+        - title
+        - notes
+    KeyConcept:
+      type: object
+      properties:
+        term:
+          type: string
+        definition:
+          type: string
+      required:
+        - term
+        - definition
+    Quiz:
+      type: object
+      properties:
+        questions:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/QuizQuestion"
+      required:
+        - questions
+    QuizQuestion:
+      type: object
+      properties:
+        question:
+          type: string
+        options:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: string
+        correctIndex:
+          type: integer
+          minimum: 0
+          maximum: 3
+        explanation:
+          type: string
+      required:
+        - question
+        - options
+        - correctIndex
+        - explanation
+    LectureAnswer:
+      type: object
+      properties:
+        answer:
+          type: string
+        foundInTranscript:
+          type: boolean
+      required:
+        - answer
+        - foundInTranscript
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+      required:
+        - error
+        - code
 

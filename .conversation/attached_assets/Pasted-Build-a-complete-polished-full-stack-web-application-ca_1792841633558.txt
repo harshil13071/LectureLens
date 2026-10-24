@@ -1,0 +1,97 @@
+Build a complete, polished full-stack web application called LectureLens, an AI-powered study assistant for college students.
+
+IMPORTANT: Prioritize a working application over an elaborate plan. Build the app, run it, and fix errors. Keep the implementation simple and beginner-friendly.
+
+TECH STACK
+
+* React + TypeScript frontend.
+* A secure server-side backend.
+* Responsive design.
+* Use a stack that works reliably in Replit.
+* No database, login, subscriptions, or paid services are required.
+
+DESIGN
+Create a premium, modern productivity interface:
+
+* Light background, dark text, indigo/violet accents.
+* Clean typography, generous spacing, rounded cards, subtle shadows.
+* Responsive layout for MacBook, tablet, and mobile.
+* Use Lucide icons if available.
+* Product name: LectureLens.
+
+MAIN PAGE
+Create a polished landing page with:
+
+* Logo and navigation.
+* Hero heading: “Turn lectures into learning.”
+* Subtitle: “Transform lecture transcripts into clear notes, quizzes, and answers.”
+* A transcript workspace with a lecture title field, optional YouTube URL field, and large transcript text area.
+* A character counter and clear button.
+* A primary “Generate Study Notes” button.
+* A preview of sample notes to make the page look complete.
+
+CORE FEATURE: AI NOTES
+The user manually pastes a transcript. Do NOT pretend that entering a YouTube URL automatically retrieves its transcript.
+
+When the user clicks Generate Study Notes:
+
+1. Validate the transcript.
+2. Send it to a server-side API endpoint.
+3. Generate:
+    * A short overview.
+    * Topic-by-topic notes.
+    * Key concepts and definitions.
+    * Important takeaways.
+    * A quick-revision summary.
+4. Display the results in a readable layout.
+5. Add Copy Notes and Download Notes buttons.
+6. Show loading indicators and helpful error messages.
+
+AI INTEGRATION
+Use OpenRouter for AI requests.
+Read these server-side environment variables:
+
+* OPENROUTER_API_KEY
+* OPENROUTER_MODEL
+
+Use the exact model specified by OPENROUTER_MODEL. Never silently substitute another model.
+
+Never expose the API key in frontend code, browser requests, client-side environment variables, or public files. Never hardcode a secret.
+
+If the key is missing, the app should still load and explain how to configure it when the user tries AI generation. Do not fake successful AI responses.
+
+BACKEND
+
+* Implement a server-side endpoint for generating notes.
+* Validate input on the server.
+* Set a reasonable maximum transcript length.
+* Handle timeouts, rate limits, and provider errors gracefully.
+* Never log API keys.
+* Keep code straightforward.
+
+ADDITIONAL FEATURES
+After the notes feature works, add:
+
+1. Generate Quiz: create five multiple-choice questions from the transcript, with four options each, scoring, and explanations.
+2. Ask Your Lecture: let users ask questions answered using the transcript. If the transcript does not contain an answer, say so.
+
+Create separate secure backend endpoints for the additional features.
+
+CONSTRAINTS
+
+* Do not require paid AI services.
+* Do not purchase plans or enable billable resources.
+* Do not add authentication or a database.
+* Do not implement automatic YouTube transcript extraction.
+* Do not expose secrets.
+* Do not claim that unimplemented features work.
+
+BUILD ORDER
+
+1. Create and run the main interface.
+2. Implement and test transcript-to-notes generation.
+3. Add quiz generation.
+4. Add transcript Q&A.
+5. Fix build errors and runtime errors.
+
+Start building the actual application now. When finished, tell me how to configure the environment variables and test each feature.

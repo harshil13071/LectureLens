@@ -1,0 +1,1 @@
+- [LectureLens scope](lecture-lens-scope.md) — Keep the app transcript-first and OpenRouter-only; no YouTube extraction, accounts, database, or subscriptions.
