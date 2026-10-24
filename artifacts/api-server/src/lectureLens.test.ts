@@ -343,6 +343,103 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
     assert.equal(lastRequestBody?.max_tokens, 1200);
   });
 
+  await t.test("Quiz generation honors requested settings and never reuses a cached quiz", async () => {
+    const makeQuestion = (index: number, type: "mcq" | "short_answer") => type === "mcq"
+      ? {
+          type,
+          question: `Generated MCQ ${index + 1}`,
+          options: ["A", "B", "C", "D"],
+          correctIndex: 1,
+          explanation: "Grounded in the lecture.",
+        }
+      : {
+          type,
+          question: `Generated short answer ${index + 1}`,
+          expectedAnswer: "A concise expected answer.",
+          keyPoints: ["Core point"],
+          explanation: "Grounded in the lecture.",
+        };
+
+    const cases = [
+      { questionCount: 10, questionType: "short_answer", difficulty: "hard", types: Array.from({ length: 10 }, () => "short_answer" as const) },
+      { questionCount: 15, questionType: "mixed", difficulty: "mixed", types: Array.from({ length: 15 }, (_, index) => index % 2 === 0 ? "mcq" as const : "short_answer" as const) },
+      { questionCount: 6, questionType: "mcq", difficulty: "easy", types: Array.from({ length: 6 }, () => "mcq" as const) },
+    ];
+
+    for (const settings of cases) {
+      mockCallCount = 0;
+      returnStatus = 200;
+      returnPayload = {
+        choices: [{ message: { content: JSON.stringify({
+          questions: settings.types.map((type, index) => makeQuestion(index, type)),
+        }) } }],
+      };
+
+      const requestBody = {
+        transcript: REALISTIC_LECTURE_TRANSCRIPT,
+        questionCount: settings.questionCount,
+        questionType: settings.questionType,
+        difficulty: settings.difficulty,
+      };
+      const res = await fetch(`${baseUrl}/quiz`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      assert.equal(res.status, 200);
+      const data = await res.json() as { questions: Array<{ type: string }> };
+      assert.equal(data.questions.length, settings.questionCount);
+      assert.deepEqual(new Set(data.questions.map((question) => question.type)), new Set(settings.types));
+      assert.equal(mockCallCount, 1);
+
+      const messages = lastRequestBody?.messages as Array<{ role: string; content: string }>;
+      const expectedTypeDirective = settings.questionType === "short_answer"
+        ? `Generate exactly ${settings.questionCount} short-answer questions.`
+        : settings.questionType === "mixed"
+          ? `Generate exactly ${settings.questionCount} mixed questions`
+          : `Generate exactly ${settings.questionCount} multiple-choice questions.`;
+      assert.ok(messages[0].content.includes(expectedTypeDirective));
+      const expectedDifficultyDirective = settings.difficulty === "mixed"
+        ? "Distribute the difficulty across easy, medium, and challenging questions."
+        : `Calibrate the questions specifically for ${settings.difficulty} difficulty.`;
+      assert.ok(messages[0].content.includes(expectedDifficultyDirective));
+
+      // Identical inputs must make a new provider request rather than return the previous quiz.
+      returnPayload = {
+        choices: [{ message: { content: JSON.stringify({
+          questions: settings.types.map((type, index) => ({
+            ...makeQuestion(index, type),
+            question: `Fresh response ${index + 1}`,
+          })),
+        }) } }],
+      };
+      const repeatedRes = await fetch(`${baseUrl}/quiz`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      assert.equal(repeatedRes.status, 200);
+      const repeatedData = await repeatedRes.json() as { questions: Array<{ question: string }> };
+      assert.equal(mockCallCount, 2);
+      assert.equal(repeatedData.questions[0].question, "Fresh response 1");
+    }
+
+    mockCallCount = 0;
+    returnPayload = {
+      choices: [{ message: { content: JSON.stringify({
+        questions: Array.from({ length: 5 }, (_, index) => makeQuestion(index, "mcq")),
+      }) } }],
+    };
+    const shortResponse = await fetch(`${baseUrl}/quiz`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript: REALISTIC_LECTURE_TRANSCRIPT, questionCount: 10, questionType: "mcq", difficulty: "medium" }),
+    });
+    assert.equal(shortResponse.status, 502);
+    const shortResponseBody = await shortResponse.json() as { error: string };
+    assert.match(shortResponseBody.error, /returned 5 questions; 10 were requested/);
+  });
+
   // 4. Test Ask with conversation history and context
   await t.test("Ask tutor with conversation history", async () => {
     mockCallCount = 0;

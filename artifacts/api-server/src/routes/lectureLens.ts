@@ -223,14 +223,6 @@ router.post("/quiz", async (req, res): Promise<void> => {
 
   // Validate bounds
   const validCount = Math.min(30, Math.max(1, questionCount));
-  const cacheKey = getAiCacheKey("quiz", {
-    title: trimmedTitle || "",
-    transcript: trimmedTranscript,
-    questionType,
-    questionCount: validCount,
-    difficulty,
-  });
-
   const startTime = Date.now();
   let diagnostics: AiDiagnostics | undefined;
 
@@ -254,7 +246,6 @@ router.post("/quiz", async (req, res): Promise<void> => {
       {
         maxTokens,
         operation: "quiz",
-        cacheKey,
         onDiagnostics: (d) => {
           diagnostics = d;
         },
