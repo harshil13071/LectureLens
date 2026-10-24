@@ -9,8 +9,9 @@ import type { QuizQuestion } from './quizQuestion';
 
 export interface Quiz {
   /**
-     * @minItems 5
-     * @maxItems 5
+     * @minItems 1
+     * @maxItems 30
      */
   questions: QuizQuestion[];
+  revisionSuggestions?: string[];
 }

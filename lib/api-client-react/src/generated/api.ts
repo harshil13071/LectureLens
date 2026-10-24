@@ -21,11 +21,17 @@ import type {
 
 import type {
   ApiError,
+  EvaluateAnswerInput,
+  EvaluateAnswerResponse,
+  ExtractDocumentTextInput,
+  ExtractedTextResult,
   HealthStatus,
   LectureAnswer,
   LectureQuestionInput,
   Quiz,
   QuizInput,
+  ResearchInput,
+  ResearchResult,
   StudyNotes,
   StudyNotesInput
 } from './api.schemas';
@@ -232,7 +238,7 @@ export const getGenerateQuizUrl = () => {
 }
 
 /**
- * @summary Generate a five-question quiz from a lecture transcript
+ * @summary Generate a custom practice quiz from study material
  */
 export const generateQuiz = async (quizInput: QuizInput, options?: Parameters<typeof customFetch>[1]): Promise<Quiz> => {
 
@@ -298,7 +304,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type GenerateQuizMutationVariables = {data: BodyType<QuizInput>}
 
     /**
- * @summary Generate a five-question quiz from a lecture transcript
+ * @summary Generate a custom practice quiz from study material
  */
 export const useGenerateQuiz = <TError = ErrorType<ApiError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateQuiz>>, TError,GenerateQuizMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -309,6 +315,170 @@ export const useGenerateQuiz = <TError = ErrorType<ApiError>,
         TContext
       > => {
       return useMutation(getGenerateQuizMutationOptions(options));
+    }
+
+export const getEvaluateShortAnswerUrl = () => {
+
+
+
+
+  return `/api/quiz/evaluate-answer`
+}
+
+/**
+ * @summary Evaluate a student short answer against the expected answer and rubric
+ */
+export const evaluateShortAnswer = async (evaluateAnswerInput: EvaluateAnswerInput, options?: Parameters<typeof customFetch>[1]): Promise<EvaluateAnswerResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<EvaluateAnswerResponse>(getEvaluateShortAnswerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(evaluateAnswerInput)
+  }
+);}
+
+
+
+
+
+export const getEvaluateShortAnswerMutationKey = () => ['evaluateShortAnswer'] as const;
+
+export const getEvaluateShortAnswerMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof evaluateShortAnswer>>, TError,EvaluateShortAnswerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof evaluateShortAnswer>>, TError,EvaluateShortAnswerMutationVariables, TContext> => {
+
+const mutationKey = getEvaluateShortAnswerMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof evaluateShortAnswer>>, EvaluateShortAnswerMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  evaluateShortAnswer(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EvaluateShortAnswerMutationResult = NonNullable<Awaited<ReturnType<typeof evaluateShortAnswer>>>
+    export type EvaluateShortAnswerMutationBody = BodyType<EvaluateAnswerInput>
+    export type EvaluateShortAnswerMutationError = ErrorType<ApiError>
+    export type EvaluateShortAnswerMutationVariables = {data: BodyType<EvaluateAnswerInput>}
+
+    /**
+ * @summary Evaluate a student short answer against the expected answer and rubric
+ */
+export const useEvaluateShortAnswer = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof evaluateShortAnswer>>, TError,EvaluateShortAnswerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof evaluateShortAnswer>>,
+        TError,
+        EvaluateShortAnswerMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEvaluateShortAnswerMutationOptions(options));
+    }
+
+export const getExtractDocumentTextUrl = () => {
+
+
+
+
+  return `/api/extract-text`
+}
+
+/**
+ * @summary Extract text from uploaded document (TXT, PDF, DOCX)
+ */
+export const extractDocumentText = async (extractDocumentTextInput: ExtractDocumentTextInput, options?: Parameters<typeof customFetch>[1]): Promise<ExtractedTextResult> => {
+    const formData = new FormData();
+formData.append(`file`, extractDocumentTextInput.file);
+
+  return customFetch<ExtractedTextResult>(getExtractDocumentTextUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+
+
+export const getExtractDocumentTextMutationKey = () => ['extractDocumentText'] as const;
+
+export const getExtractDocumentTextMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extractDocumentText>>, TError,ExtractDocumentTextMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof extractDocumentText>>, TError,ExtractDocumentTextMutationVariables, TContext> => {
+
+const mutationKey = getExtractDocumentTextMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof extractDocumentText>>, ExtractDocumentTextMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  extractDocumentText(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExtractDocumentTextMutationResult = NonNullable<Awaited<ReturnType<typeof extractDocumentText>>>
+    export type ExtractDocumentTextMutationBody = BodyType<ExtractDocumentTextInput>
+    export type ExtractDocumentTextMutationError = ErrorType<ApiError>
+    export type ExtractDocumentTextMutationVariables = {data: BodyType<ExtractDocumentTextInput>}
+
+    /**
+ * @summary Extract text from uploaded document (TXT, PDF, DOCX)
+ */
+export const useExtractDocumentText = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extractDocumentText>>, TError,ExtractDocumentTextMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof extractDocumentText>>,
+        TError,
+        ExtractDocumentTextMutationVariables,
+        TContext
+      > => {
+      return useMutation(getExtractDocumentTextMutationOptions(options));
     }
 
 export const getAskLectureUrl = () => {
@@ -397,5 +567,93 @@ export const useAskLecture = <TError = ErrorType<ApiError>,
         TContext
       > => {
       return useMutation(getAskLectureMutationOptions(options));
+    }
+
+export const getResearchTopicUrl = () => {
+
+
+
+
+  return `/api/research`
+}
+
+/**
+ * @summary Perform AI topic research with live web search
+ */
+export const researchTopic = async (researchInput: ResearchInput, options?: Parameters<typeof customFetch>[1]): Promise<ResearchResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ResearchResult>(getResearchTopicUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(researchInput)
+  }
+);}
+
+
+
+
+
+export const getResearchTopicMutationKey = () => ['researchTopic'] as const;
+
+export const getResearchTopicMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof researchTopic>>, TError,ResearchTopicMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof researchTopic>>, TError,ResearchTopicMutationVariables, TContext> => {
+
+const mutationKey = getResearchTopicMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof researchTopic>>, ResearchTopicMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  researchTopic(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResearchTopicMutationResult = NonNullable<Awaited<ReturnType<typeof researchTopic>>>
+    export type ResearchTopicMutationBody = BodyType<ResearchInput>
+    export type ResearchTopicMutationError = ErrorType<ApiError>
+    export type ResearchTopicMutationVariables = {data: BodyType<ResearchInput>}
+
+    /**
+ * @summary Perform AI topic research with live web search
+ */
+export const useResearchTopic = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof researchTopic>>, TError,ResearchTopicMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof researchTopic>>,
+        TError,
+        ResearchTopicMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResearchTopicMutationOptions(options));
     }
 

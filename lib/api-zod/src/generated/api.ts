@@ -50,37 +50,80 @@ export const GenerateStudyNotesResponse = zod.object({
 
 
 /**
- * @summary Generate a five-question quiz from a lecture transcript
+ * @summary Generate a custom practice quiz from study material
  */
 export const generateQuizBodyTitleMax = 160;
 
 export const generateQuizBodyTranscriptMax = 40000;
 
+export const generateQuizBodyQuestionTypeDefault = `mcq`;
+export const generateQuizBodyQuestionCountDefault = 5;
+export const generateQuizBodyQuestionCountMax = 30;
 
+export const generateQuizBodyDifficultyDefault = `medium`;
 
 export const GenerateQuizBody = zod.object({
   "title": zod.string().max(generateQuizBodyTitleMax).optional(),
-  "transcript": zod.string().min(1).max(generateQuizBodyTranscriptMax)
+  "transcript": zod.string().min(1).max(generateQuizBodyTranscriptMax),
+  "questionType": zod.enum(['mcq', 'short_answer', 'mixed']).default(generateQuizBodyQuestionTypeDefault),
+  "questionCount": zod.number().int().min(1).max(generateQuizBodyQuestionCountMax).default(generateQuizBodyQuestionCountDefault),
+  "difficulty": zod.enum(['easy', 'medium', 'hard', 'mixed']).default(generateQuizBodyDifficultyDefault)
 })
 
-export const generateQuizResponseQuestionsItemOptionsMin = 4;
-export const generateQuizResponseQuestionsItemOptionsMax = 4;
-
+export const generateQuizResponseQuestionsItemTypeDefault = `mcq`;
 export const generateQuizResponseQuestionsItemCorrectIndexMin = 0;
 export const generateQuizResponseQuestionsItemCorrectIndexMax = 3;
 
-export const generateQuizResponseQuestionsMin = 5;
-export const generateQuizResponseQuestionsMax = 5;
+export const generateQuizResponseQuestionsMax = 30;
 
 
 
 export const GenerateQuizResponse = zod.object({
   "questions": zod.array(zod.object({
+  "type": zod.enum(['mcq', 'short_answer']).default(generateQuizResponseQuestionsItemTypeDefault),
   "question": zod.string(),
-  "options": zod.array(zod.string()).min(generateQuizResponseQuestionsItemOptionsMin).max(generateQuizResponseQuestionsItemOptionsMax),
-  "correctIndex": zod.number().int().min(generateQuizResponseQuestionsItemCorrectIndexMin).max(generateQuizResponseQuestionsItemCorrectIndexMax),
+  "options": zod.array(zod.string()).optional(),
+  "correctIndex": zod.number().int().min(generateQuizResponseQuestionsItemCorrectIndexMin).max(generateQuizResponseQuestionsItemCorrectIndexMax).optional(),
+  "expectedAnswer": zod.string().optional(),
+  "keyPoints": zod.array(zod.string()).optional(),
   "explanation": zod.string()
-})).min(generateQuizResponseQuestionsMin).max(generateQuizResponseQuestionsMax)
+})).min(1).max(generateQuizResponseQuestionsMax),
+  "revisionSuggestions": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Evaluate a student short answer against the expected answer and rubric
+ */
+export const EvaluateShortAnswerBody = zod.object({
+  "question": zod.string(),
+  "studentAnswer": zod.string(),
+  "expectedAnswer": zod.string(),
+  "keyPoints": zod.array(zod.string()).optional()
+})
+
+export const EvaluateShortAnswerResponse = zod.object({
+  "isCorrect": zod.boolean(),
+  "score": zod.number(),
+  "feedback": zod.string(),
+  "whatYouGotRight": zod.array(zod.string()),
+  "whatYouMissed": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Extract text from uploaded document (TXT, PDF, DOCX)
+ */
+export const ExtractDocumentTextBody = zod.object({
+  "file": zod.instanceof(Blob)
+})
+
+export const ExtractDocumentTextResponse = zod.object({
+  "filename": zod.string(),
+  "fileType": zod.string(),
+  "textLength": zod.number().int(),
+  "text": zod.string(),
+  "warning": zod.string().optional()
 })
 
 
@@ -112,6 +155,41 @@ export const AskLectureBody = zod.object({
 export const AskLectureResponse = zod.object({
   "answer": zod.string(),
   "foundInTranscript": zod.boolean()
+})
+
+
+/**
+ * @summary Perform AI topic research with live web search
+ */
+export const researchTopicBodyQueryMin = 2;
+export const researchTopicBodyQueryMax = 500;
+
+export const researchTopicBodyModeDefault = `overview`;
+
+export const ResearchTopicBody = zod.object({
+  "query": zod.string().min(researchTopicBodyQueryMin).max(researchTopicBodyQueryMax),
+  "mode": zod.enum(['overview', 'detailed', 'exam_prep', 'comparison']).default(researchTopicBodyModeDefault)
+})
+
+export const ResearchTopicResponse = zod.object({
+  "topic": zod.string(),
+  "mode": zod.string(),
+  "overview": zod.string(),
+  "sections": zod.array(zod.object({
+  "heading": zod.string(),
+  "content": zod.string()
+})),
+  "keyConcepts": zod.array(zod.object({
+  "term": zod.string(),
+  "definition": zod.string()
+})),
+  "examples": zod.array(zod.string()).optional(),
+  "uncertaintyNote": zod.string().optional(),
+  "sources": zod.array(zod.object({
+  "title": zod.string(),
+  "url": zod.string(),
+  "snippet": zod.string().optional()
+}))
 })
 
 

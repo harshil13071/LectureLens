@@ -5,18 +5,18 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { QuizQuestionType } from './quizQuestionType';
 
 export interface QuizQuestion {
+  type?: QuizQuestionType;
   question: string;
-  /**
-     * @minItems 4
-     * @maxItems 4
-     */
-  options: string[];
+  options?: string[];
   /**
      * @minimum 0
      * @maximum 3
      */
-  correctIndex: number;
+  correctIndex?: number;
+  expectedAnswer?: string;
+  keyPoints?: string[];
   explanation: string;
 }

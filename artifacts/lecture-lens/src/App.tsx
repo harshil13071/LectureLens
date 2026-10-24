@@ -28,6 +28,10 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object' && 'data' in error) {
     const data = (error as { data?: unknown }).data;
     if (data && typeof data === 'object' && 'error' in data && typeof data.error === 'string') {
+      const retryAfter = 'retryAfter' in data && typeof data.retryAfter === 'number' ? data.retryAfter : undefined;
+      if (retryAfter) {
+        return `${data.error} Please wait ${retryAfter}s before retrying.`;
+      }
       return data.error;
     }
   }
@@ -64,11 +68,11 @@ function Home() {
   };
 
   const makeNotes = () => {
-    if (!ready) return;
+    if (!ready || notes.isPending) return;
     notes.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), youtubeUrl: youtubeUrl.trim() || undefined } });
   };
   const makeQuiz = () => {
-    if (!ready) return;
+    if (!ready || quiz.isPending) return;
     setSelectedAnswers({});
     setQuizSubmitted(false);
     quiz.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim() } });
@@ -142,7 +146,7 @@ function Home() {
           </a>
           <nav aria-label="Main navigation" className="flex items-center gap-1.5 whitespace-nowrap text-[9px] font-semibold text-[#77738c] sm:gap-5 sm:text-[12px]">
             <a href="#workspace" data-testid="link-workspace" className="transition hover:text-[#6754d9]">Workspace</a>
-            <a href="#notes-preview" data-testid="link-notes-preview" className="transition hover:text-[#6754d9]">Notes</a>
+            <a href={notes.data || notes.isPending ? '#notes-output' : '#notes-preview'} data-testid="link-notes-preview" className="transition hover:text-[#6754d9]">Notes</a>
             <a href="#practice" data-testid="link-practice" className="transition hover:text-[#6754d9]">Practice</a>
             <a href="#ask" data-testid="link-ask" className="transition hover:text-[#6754d9]">Ask</a>
           </nav>
@@ -253,7 +257,7 @@ function Home() {
             <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><BookOpen size={19} /></div><div><h2 className="font-display text-[19px] font-bold tracking-[-.03em]">Practice what you learned</h2><p className="text-[12px] text-[#908c9f]">Five questions, with explanations to help it stick.</p></div></div>
             {!quiz.data && !quiz.isPending && <div className="mt-5 rounded-xl border border-dashed border-[#ded9ed] bg-[#fbfaff] px-4 py-5 text-center"><p className="text-[13px] font-semibold text-[#68637d]">Your practice quiz will live here.</p><p className="mt-1 text-[11px] text-[#9994aa]">Add a transcript above, then choose “Make a practice quiz.”</p></div>}
             {quiz.isPending && <div className="mt-5 space-y-3" aria-label="Building quiz">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-[#f4f2f8]" />)}</div>}
-            {quiz.isError && <div role="alert" className="mt-4 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] p-3 text-[12px] text-[#a94e48]">Quiz generation failed. Use the button above to try again.</div>}
+            {quiz.isError && <div role="alert" className="mt-4 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] p-3 text-[12px] text-[#a94e48]">{getApiErrorMessage(quiz.error, 'The quiz could not be generated. Please try again.')}</div>}
             {quiz.data && <div className="mt-5">
               {quizSubmitted && <div className="mb-5 flex items-center justify-between rounded-xl bg-[#f3f0ff] px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[.12em] text-[#796cc1]">Your score</p><p className="mt-0.5 font-display text-[21px] font-extrabold text-[#453b80]">{score} <span className="text-[13px] font-semibold text-[#827aa7]">/ {quiz.data.questions.length}</span></p></div><button onClick={() => { setSelectedAnswers({}); setQuizSubmitted(false); }} data-testid="button-retry-quiz" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#6f5ec7]"><RotateCcw size={14} /> Try again</button></div>}
               <div className="space-y-5">{quiz.data.questions.map((item, index) => {

@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { QuizInputDifficulty } from './quizInputDifficulty';
+import type { QuizInputQuestionType } from './quizInputQuestionType';
 
 export interface QuizInput {
   /** @maxLength 160 */
@@ -14,4 +16,11 @@ export interface QuizInput {
      * @maxLength 40000
      */
   transcript: string;
+  questionType?: QuizInputQuestionType;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  questionCount?: number;
+  difficulty?: QuizInputDifficulty;
 }

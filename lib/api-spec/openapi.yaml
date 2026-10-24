@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: API specification
@@ -12,6 +11,8 @@ tags:
     description: Health operations
   - name: lecture-lens
     description: Transcript-based study tools
+  - name: research
+    description: Web research operations
 paths:
   /healthz:
     get:
@@ -78,7 +79,7 @@ paths:
     post:
       operationId: generateQuiz
       tags: [lecture-lens]
-      summary: Generate a five-question quiz from a lecture transcript
+      summary: Generate a custom practice quiz from study material
       requestBody:
         required: true
         content:
@@ -93,7 +94,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Quiz"
         "400":
-          description: Invalid transcript
+          description: Invalid transcript or parameters
           content:
             application/json:
               schema:
@@ -118,6 +119,72 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "504":
           description: AI provider request timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /quiz/evaluate-answer:
+    post:
+      operationId: evaluateShortAnswer
+      tags: [lecture-lens]
+      summary: Evaluate a student short answer against the expected answer and rubric
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvaluateAnswerInput"
+      responses:
+        "200":
+          description: Evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluateAnswerResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Evaluation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /extract-text:
+    post:
+      operationId: extractDocumentText
+      tags: [lecture-lens]
+      summary: Extract text from uploaded document (TXT, PDF, DOCX)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ExtractDocumentTextInput"
+      responses:
+        "200":
+          description: Extracted text and metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractedTextResult"
+        "400":
+          description: Unsupported or invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Extraction failed
           content:
             application/json:
               schema:
@@ -170,6 +237,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /research:
+    post:
+      operationId: researchTopic
+      tags: [research]
+      summary: Perform AI topic research with live web search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResearchInput"
+      responses:
+        "200":
+          description: Synthesised research with source attribution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResearchResult"
+        "400":
+          description: Invalid research query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Web search or AI synthesis failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "504":
+          description: Research timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -204,8 +307,87 @@ components:
           type: string
           minLength: 1
           maxLength: 40000
+        questionType:
+          type: string
+          enum: [mcq, short_answer, mixed]
+          default: mcq
+        questionCount:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 5
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, mixed]
+          default: medium
       required:
         - transcript
+    EvaluateAnswerInput:
+      type: object
+      properties:
+        question:
+          type: string
+        studentAnswer:
+          type: string
+        expectedAnswer:
+          type: string
+        keyPoints:
+          type: array
+          items:
+            type: string
+      required:
+        - question
+        - studentAnswer
+        - expectedAnswer
+    EvaluateAnswerResponse:
+      type: object
+      properties:
+        isCorrect:
+          type: boolean
+        score:
+          type: number
+        feedback:
+          type: string
+        whatYouGotRight:
+          type: array
+          items:
+            type: string
+        whatYouMissed:
+          type: array
+          items:
+            type: string
+      required:
+        - isCorrect
+        - score
+        - feedback
+        - whatYouGotRight
+        - whatYouMissed
+    ExtractDocumentTextInput:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+      required:
+        - file
+    ExtractedTextResult:
+      type: object
+      properties:
+        filename:
+          type: string
+        fileType:
+          type: string
+        textLength:
+          type: integer
+        text:
+          type: string
+        warning:
+          type: string
+      required:
+        - filename
+        - fileType
+        - textLength
+        - text
     LectureQuestionInput:
       type: object
       properties:
@@ -291,33 +473,43 @@ components:
       properties:
         questions:
           type: array
-          minItems: 5
-          maxItems: 5
+          minItems: 1
+          maxItems: 30
           items:
             $ref: "#/components/schemas/QuizQuestion"
+        revisionSuggestions:
+          type: array
+          items:
+            type: string
       required:
         - questions
     QuizQuestion:
       type: object
       properties:
+        type:
+          type: string
+          enum: [mcq, short_answer]
+          default: mcq
         question:
           type: string
         options:
           type: array
-          minItems: 4
-          maxItems: 4
           items:
             type: string
         correctIndex:
           type: integer
           minimum: 0
           maximum: 3
+        expectedAnswer:
+          type: string
+        keyPoints:
+          type: array
+          items:
+            type: string
         explanation:
           type: string
       required:
         - question
-        - options
-        - correctIndex
         - explanation
     LectureAnswer:
       type: object
@@ -329,6 +521,75 @@ components:
       required:
         - answer
         - foundInTranscript
+    ResearchInput:
+      type: object
+      properties:
+        query:
+          type: string
+          minLength: 2
+          maxLength: 500
+        mode:
+          type: string
+          enum: [overview, detailed, exam_prep, comparison]
+          default: overview
+      required:
+        - query
+    ResearchSection:
+      type: object
+      properties:
+        heading:
+          type: string
+        content:
+          type: string
+      required:
+        - heading
+        - content
+    ResearchSource:
+      type: object
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+        snippet:
+          type: string
+      required:
+        - title
+        - url
+    ResearchResult:
+      type: object
+      properties:
+        topic:
+          type: string
+        mode:
+          type: string
+        overview:
+          type: string
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResearchSection"
+        keyConcepts:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyConcept"
+        examples:
+          type: array
+          items:
+            type: string
+        uncertaintyNote:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResearchSource"
+      required:
+        - topic
+        - mode
+        - overview
+        - sections
+        - keyConcepts
+        - sources
     ApiError:
       type: object
       properties:
@@ -339,4 +600,3 @@ components:
       required:
         - error
         - code
-

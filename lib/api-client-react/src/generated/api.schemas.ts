@@ -21,6 +21,25 @@ export interface StudyNotesInput {
   youtubeUrl?: string;
 }
 
+export type QuizInputQuestionType = typeof QuizInputQuestionType[keyof typeof QuizInputQuestionType];
+
+
+export const QuizInputQuestionType = {
+  mcq: 'mcq',
+  short_answer: 'short_answer',
+  mixed: 'mixed',
+} as const;
+
+export type QuizInputDifficulty = typeof QuizInputDifficulty[keyof typeof QuizInputDifficulty];
+
+
+export const QuizInputDifficulty = {
+  easy: 'easy',
+  medium: 'medium',
+  hard: 'hard',
+  mixed: 'mixed',
+} as const;
+
 export interface QuizInput {
   /** @maxLength 160 */
   title?: string;
@@ -29,6 +48,40 @@ export interface QuizInput {
      * @maxLength 40000
      */
   transcript: string;
+  questionType?: QuizInputQuestionType;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  questionCount?: number;
+  difficulty?: QuizInputDifficulty;
+}
+
+export interface EvaluateAnswerInput {
+  question: string;
+  studentAnswer: string;
+  expectedAnswer: string;
+  keyPoints?: string[];
+}
+
+export interface EvaluateAnswerResponse {
+  isCorrect: boolean;
+  score: number;
+  feedback: string;
+  whatYouGotRight: string[];
+  whatYouMissed: string[];
+}
+
+export interface ExtractDocumentTextInput {
+  file: Blob | File;
+}
+
+export interface ExtractedTextResult {
+  filename: string;
+  fileType: string;
+  textLength: number;
+  text: string;
+  warning?: string;
 }
 
 export type ConversationMessageRole = typeof ConversationMessageRole[keyof typeof ConversationMessageRole];
@@ -80,32 +133,81 @@ export interface StudyNotes {
   quickRevision: string;
 }
 
+export type QuizQuestionType = typeof QuizQuestionType[keyof typeof QuizQuestionType];
+
+
+export const QuizQuestionType = {
+  mcq: 'mcq',
+  short_answer: 'short_answer',
+} as const;
+
 export interface QuizQuestion {
+  type?: QuizQuestionType;
   question: string;
-  /**
-     * @minItems 4
-     * @maxItems 4
-     */
-  options: string[];
+  options?: string[];
   /**
      * @minimum 0
      * @maximum 3
      */
-  correctIndex: number;
+  correctIndex?: number;
+  expectedAnswer?: string;
+  keyPoints?: string[];
   explanation: string;
 }
 
 export interface Quiz {
   /**
-     * @minItems 5
-     * @maxItems 5
+     * @minItems 1
+     * @maxItems 30
      */
   questions: QuizQuestion[];
+  revisionSuggestions?: string[];
 }
 
 export interface LectureAnswer {
   answer: string;
   foundInTranscript: boolean;
+}
+
+export type ResearchInputMode = typeof ResearchInputMode[keyof typeof ResearchInputMode];
+
+
+export const ResearchInputMode = {
+  overview: 'overview',
+  detailed: 'detailed',
+  exam_prep: 'exam_prep',
+  comparison: 'comparison',
+} as const;
+
+export interface ResearchInput {
+  /**
+     * @minLength 2
+     * @maxLength 500
+     */
+  query: string;
+  mode?: ResearchInputMode;
+}
+
+export interface ResearchSection {
+  heading: string;
+  content: string;
+}
+
+export interface ResearchSource {
+  title: string;
+  url: string;
+  snippet?: string;
+}
+
+export interface ResearchResult {
+  topic: string;
+  mode: string;
+  overview: string;
+  sections: ResearchSection[];
+  keyConcepts: KeyConcept[];
+  examples?: string[];
+  uncertaintyNote?: string;
+  sources: ResearchSource[];
 }
 
 export interface ApiError {
