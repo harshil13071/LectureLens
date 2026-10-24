@@ -276,6 +276,17 @@ router.post("/quiz", async (req, res): Promise<void> => {
     }
 
     const validated = GenerateQuizResponse.parse(resultObj);
+    if (validated.questions.length !== validCount) {
+      throw new Error(`Quiz generation returned ${validated.questions.length} questions; ${validCount} were requested.`);
+    }
+    const generatedTypes = new Set(validated.questions.map((question) => question.type ?? "mcq"));
+    if (questionType === "mixed") {
+      if (!generatedTypes.has("mcq") || !generatedTypes.has("short_answer")) {
+        throw new Error("Quiz generation did not return both multiple-choice and short-answer questions as requested.");
+      }
+    } else if (validated.questions.some((question) => (question.type ?? "mcq") !== questionType)) {
+      throw new Error(`Quiz generation did not follow the requested ${questionType} question type.`);
+    }
     sendAiSuccess(req, res, validated, "quiz", diagnostics);
   } catch (error) {
     sendAiError(req, res, error, "quiz", Date.now() - startTime);
