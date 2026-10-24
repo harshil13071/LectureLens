@@ -35,6 +35,83 @@ decide which page to write back to disk if modified, and replace.
 // Realistic long lecture transcript (multi-topic university lecture)
 const LONG_LECTURE_TRANSCRIPT = REALISTIC_LECTURE_TRANSCRIPT.repeat(8);
 
+function createMinimalPdf(text: string, imageOnly = false): Buffer {
+  const escapedText = text.replace(/[\\()]/g, "\\$&");
+  const stream = imageOnly
+    ? "q 300 0 0 200 100 300 cm /Im0 Do Q"
+    : text ? `BT /F1 16 Tf 72 720 Td (${escapedText}) Tj ET` : "q Q";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >>${imageOnly ? " /XObject << /Im0 6 0 R >>" : ""} >> /Contents 5 0 R >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+  if (imageOnly) {
+    objects.push("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length 3 >>\nstream\nFF>\nendstream");
+  }
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "ascii");
+}
+
+function createStoredZip(entries: Array<[string, string]>): Buffer {
+  const crc32 = (data: Buffer) => {
+    let crc = 0xffffffff;
+    for (const byte of data) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let localOffset = 0;
+
+  for (const [filename, contents] of entries) {
+    const name = Buffer.from(filename, "utf8");
+    const data = Buffer.from(contents, "utf8");
+    const checksum = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    localParts.push(local, name, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(localOffset, 42);
+    centralParts.push(central, name);
+    localOffset += local.length + name.length + data.length;
+  }
+
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(localOffset, 16);
+  return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
 test("sanitizeProviderMessage redacts secrets, API keys, and sensitive URLs", () => {
   const sensitive1 = "Error with Authorization: Bearer gsk_abc123456789XYZ! Access denied.";
   const sanitized1 = sanitizeProviderMessage(sensitive1);
@@ -89,6 +166,13 @@ test("API Endpoints validation and behavior with mock provider", async (t) => {
   const address = server.address() as { port: number };
   const baseUrl = `http://127.0.0.1:${address.port}/api`;
 
+  const upload = (filename: string, bytes: string | Uint8Array, contentType = "application/octet-stream") => {
+    const form = new FormData();
+    const blobBody: string | ArrayBuffer = typeof bytes === "string" ? bytes : Uint8Array.from(bytes).buffer as ArrayBuffer;
+    form.append("file", new Blob([blobBody], { type: contentType }), filename);
+    return form;
+  };
+
   t.after(() => {
     server.close();
   });
@@ -124,6 +208,113 @@ test("API Endpoints validation and behavior with mock provider", async (t) => {
     assert.equal(res.status, 400);
     const body = await res.json() as { code: string };
     assert.equal(body.code, "INVALID_QUESTION");
+  });
+
+  await t.test("POST /extract-text extracts TXT content regardless of claimed MIME type", async () => {
+    const text = "A readable lecture transcript with more than a few words.";
+    const res = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("lecture.TXT", text, "application/octet-stream"),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { filename: string; fileType: string; textLength: number; text: string };
+    assert.equal(body.filename, "lecture.TXT");
+    assert.equal(body.fileType, "TXT Document");
+    assert.equal(body.text, text);
+    assert.equal(body.textLength, text.length);
+  });
+
+  await t.test("POST /extract-text rejects missing, unsupported, and empty files", async () => {
+    const missing = await fetch(`${baseUrl}/extract-text`, { method: "POST", body: new FormData() });
+    assert.equal(missing.status, 400);
+    assert.equal((await missing.json() as { code: string }).code, "NO_FILE_UPLOADED");
+
+    const unsupported = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("notes.exe", "Not a supported material type.", "text/plain"),
+    });
+    assert.equal(unsupported.status, 400);
+    assert.equal((await unsupported.json() as { code: string }).code, "EXTRACTION_FAILED");
+
+    const empty = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("empty.txt", new Uint8Array()),
+    });
+    assert.equal(empty.status, 400);
+    assert.match((await empty.json() as { error: string }).error, /empty/i);
+
+    const emptyPdf = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("empty.pdf", new Uint8Array(), "application/pdf"),
+    });
+    assert.equal(emptyPdf.status, 400);
+    assert.match((await emptyPdf.json() as { error: string }).error, /empty/i);
+  });
+
+  await t.test("POST /extract-text enforces the 15 MB limit", async () => {
+    const overLimit = new Uint8Array(15 * 1024 * 1024 + 1);
+    const res = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("large.txt", overLimit),
+    });
+    assert.equal(res.status, 413);
+    assert.equal((await res.json() as { code: string }).code, "FILE_TOO_LARGE");
+  });
+
+  await t.test("POST /extract-text extracts readable PDF and DOCX content", async () => {
+    const pdfText = "PDF extraction confirms readable lecture material.";
+    const pdfRes = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("lecture.pdf", createMinimalPdf(pdfText), "application/pdf"),
+    });
+    assert.equal(pdfRes.status, 200);
+    const pdfResult = await pdfRes.json() as { fileType: string; text: string };
+    assert.equal(pdfResult.fileType, "PDF Document");
+    assert.ok(pdfResult.text.includes(pdfText));
+
+    const docxText = "DOCX extraction confirms readable lecture material.";
+    const docxBuffer = createStoredZip([
+      ["[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>"],
+      ["_rels/.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>"],
+      ["word/document.xml", `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${docxText}</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`],
+    ]);
+    const docxRes = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("lecture.docx", docxBuffer, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    });
+    assert.equal(docxRes.status, 200);
+    const docxResult = await docxRes.json() as { fileType: string; text: string };
+    assert.equal(docxResult.fileType, "Word Document (.docx)");
+    assert.ok(docxResult.text.includes(docxText));
+  });
+
+  await t.test("POST /extract-text explains when a PDF has no readable text", async () => {
+    const res = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("scanned.pdf", createMinimalPdf("", true), "application/pdf"),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: string; code: string };
+    assert.equal(body.code, "EXTRACTION_FAILED");
+    assert.match(body.error, /no readable text|OCR/i);
+  });
+
+  await t.test("POST /extract-text returns useful errors for malformed PDF and DOCX data", async () => {
+    const malformedPdf = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("broken.pdf", "%PDF-1.7\nnot a valid PDF", "application/pdf"),
+    });
+    assert.equal(malformedPdf.status, 400);
+    const malformedPdfBody = await malformedPdf.json() as { code: string; error: string };
+    assert.equal(malformedPdfBody.code, "EXTRACTION_FAILED");
+    assert.match(malformedPdfBody.error, /Could not parse PDF|valid PDF signature/i);
+
+    const malformedDocx = await fetch(`${baseUrl}/extract-text`, {
+      method: "POST",
+      body: upload("broken.docx", new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00])),
+    });
+    assert.equal(malformedDocx.status, 400);
+    assert.match((await malformedDocx.json() as { error: string }).error, /Word Document|DOCX/i);
   });
 
   await t.test("POST /study-notes returns 503 when GROQ_API_KEY is not configured", async () => {
@@ -479,7 +670,8 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
 
     // Verify system prompt contains transcript and user message only contains the question
     const messages = lastRequestBody?.messages as Array<{ role: string; content: string }>;
-    assert.ok(messages[0].content.includes("Supporting lecture context"));
+    assert.ok(messages[0].content.includes("Supporting study context"));
+    assert.ok(messages[0].content.includes(REALISTIC_LECTURE_TRANSCRIPT.trim()));
     assert.equal(messages[messages.length - 1].content, "How does the MMU know where physical memory is?");
     assert.equal(lastRequestBody?.max_tokens, 1000);
   });

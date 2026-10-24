@@ -1,14 +1,14 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
-import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShortAnswer } from '@workspace/api-client-react';
+import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShortAnswer, useExtractDocumentText } from '@workspace/api-client-react';
 import {
   ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard,
   FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw,
-  Sparkles, X, Youtube,
+  FileUp, Sparkles, Trash2, Upload, X, Youtube,
 } from 'lucide-react';
 import {
   Route,
@@ -39,6 +39,7 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
 }
 
 function Home() {
+  const [materialMode, setMaterialMode] = useState<'paste' | 'upload'>('paste');
   const [title, setTitle] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -53,9 +54,15 @@ function Home() {
   const [evaluations, setEvaluations] = useState<Record<number, Awaited<ReturnType<ReturnType<typeof useEvaluateShortAnswer>['mutateAsync']>>>>({});
   const [evaluationError, setEvaluationError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState('');
+  const [isDraggingDocument, setIsDraggingDocument] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadInFlightRef = useRef(false);
   const notes = useGenerateStudyNotes();
   const quiz = useGenerateQuiz();
   const evaluateAnswer = useEvaluateShortAnswer();
+  const documentExtraction = useExtractDocumentText();
   const ask = useAskLecture();
   const ready = transcript.trim().length > 0;
   const lengthLabel = `${transcript.length.toLocaleString()} / 40,000`;
@@ -69,9 +76,53 @@ function Home() {
     setSelectedAnswers({});
     setQuizSubmitted(false);
     setCopied(false);
+    setSelectedDocument(null);
+    setUploadError('');
+    setMaterialMode('paste');
+    documentExtraction.reset();
     notes.reset();
     quiz.reset();
     ask.reset();
+  };
+
+  const handleDocumentFile = (file?: File) => {
+    if (!file || uploadInFlightRef.current || documentExtraction.isPending) return;
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!extension || !['txt', 'pdf', 'docx'].includes(extension)) {
+      setUploadError('Choose a TXT, PDF, or DOCX document.');
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setUploadError('This document is over the 15 MB upload limit. Choose a smaller file.');
+      return;
+    }
+
+    setSelectedDocument(file);
+    setUploadError('');
+    uploadInFlightRef.current = true;
+    documentExtraction.reset();
+    documentExtraction.mutate(
+      { data: { file } },
+      {
+        onSuccess: (result) => {
+          uploadInFlightRef.current = false;
+          setTranscript(result.text.slice(0, 40000));
+          setUploadError('');
+        },
+        onError: () => {
+          uploadInFlightRef.current = false;
+        },
+      },
+    );
+  };
+
+  const removeDocument = () => {
+    if (uploadInFlightRef.current || documentExtraction.isPending) return;
+    setSelectedDocument(null);
+    setTranscript('');
+    setUploadError('');
+    documentExtraction.reset();
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const makeNotes = () => {
@@ -221,16 +272,41 @@ function Home() {
               <Link2 size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#aaa6b7]" />
               <input id="youtube-url" data-testid="input-youtube-url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} maxLength={2048} placeholder="https://youtube.com/watch?v=..." className="h-11 w-full rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] pl-10 pr-3.5 text-[14px] text-[#302d48] outline-none transition focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10" />
             </div>
+            <div className="mt-5 inline-flex rounded-xl border border-[#e8e6ef] bg-[#f8f7fb] p-1" role="tablist" aria-label="Study material source">
+              <button type="button" role="tab" aria-selected={materialMode === 'paste'} onClick={() => setMaterialMode('paste')} data-testid="tab-paste-text" className={`rounded-lg px-3.5 py-2 text-[12px] font-bold transition ${materialMode === 'paste' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:text-[#5c4bc1]'}`}>Paste Text</button>
+              <button type="button" role="tab" aria-selected={materialMode === 'upload'} onClick={() => setMaterialMode('upload')} data-testid="tab-upload-document" className={`rounded-lg px-3.5 py-2 text-[12px] font-bold transition ${materialMode === 'upload' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:text-[#5c4bc1]'}`}>Upload Document</button>
+            </div>
             <div className="mb-2 mt-5 flex items-center justify-between">
-              <label className="text-[12px] font-bold text-[#4b4861]" htmlFor="lecture-transcript">Transcript</label>
+              <label className="text-[12px] font-bold text-[#4b4861]" htmlFor="lecture-transcript">{materialMode === 'paste' ? 'Transcript' : 'Study material'}</label>
               <div className="flex items-center gap-3">
                 <span data-testid="text-transcript-count" className={`font-mono text-[10px] font-medium ${transcript.length > 40000 ? 'text-red-500' : 'text-[#aaa6b7]'}`}>{lengthLabel}</span>
-                <button type="button" data-testid="button-clear-transcript" onClick={clearWorkspace} disabled={!title && !youtubeUrl && !transcript && !question && !notes.data && !quiz.data && !ask.data} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8177a4] transition hover:text-[#6754d9] disabled:cursor-not-allowed disabled:opacity-40">
+                <button type="button" data-testid="button-clear-transcript" onClick={clearWorkspace} disabled={documentExtraction.isPending || (!title && !youtubeUrl && !transcript && !selectedDocument && !question && !notes.data && !quiz.data && !ask.data)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8177a4] transition hover:text-[#6754d9] disabled:cursor-not-allowed disabled:opacity-40">
                   <X size={13} /> Clear
                 </button>
               </div>
             </div>
-            <textarea id="lecture-transcript" data-testid="input-lecture-transcript" value={transcript} onChange={(event) => setTranscript(event.target.value.slice(0, 40000))} placeholder="Paste your lecture transcript here. The more context you include, the more useful your study materials will be." className="min-h-[190px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-4 text-[14px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10 sm:min-h-[220px]" />
+            {materialMode === 'paste' ? <textarea id="lecture-transcript" data-testid="input-lecture-transcript" value={transcript} onChange={(event) => setTranscript(event.target.value.slice(0, 40000))} placeholder="Paste your lecture transcript here. The more context you include, the more useful your study materials will be." className="min-h-[190px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-4 text-[14px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10 sm:min-h-[220px]" /> : <div className="space-y-3">
+              <input ref={fileInputRef} type="file" accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" data-testid="input-study-document" disabled={documentExtraction.isPending} onChange={(event) => { handleDocumentFile(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+              {!selectedDocument && <div onDragEnter={(event) => { event.preventDefault(); setIsDraggingDocument(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { event.preventDefault(); setIsDraggingDocument(false); }} onDrop={(event) => { event.preventDefault(); setIsDraggingDocument(false); handleDocumentFile(event.dataTransfer.files?.[0]); }} className={`rounded-2xl border-2 border-dashed px-5 py-7 text-center transition ${isDraggingDocument ? 'border-[#8b79df] bg-[#f1edff]' : 'border-[#ded9ed] bg-[#fbfaff]'}`}>
+                <div className="mx-auto grid h-11 w-11 place-items-center rounded-[14px] bg-white text-[#7665cf] shadow-sm"><FileUp size={20} /></div>
+                <p className="mt-3 text-[13px] font-bold text-[#4b4861]">Drop a document here</p>
+                <p className="mt-1 text-[11px] text-[#9994aa]">TXT, PDF, or DOCX · up to 15 MB</p>
+                <button type="button" data-testid="button-browse-document" disabled={documentExtraction.isPending} onClick={() => fileInputRef.current?.click()} className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-[#e3def2] bg-white px-3.5 text-[12px] font-bold text-[#6655c6] transition hover:bg-[#f8f6ff] disabled:opacity-50"><Upload size={14} /> Browse Files</button>
+              </div>}
+              {selectedDocument && <div className="rounded-2xl border border-[#e6e1f3] bg-[#fbfaff] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-[#7463ca]"><FileText size={17} /></div><div className="min-w-0"><p className="truncate text-[12px] font-bold text-[#49445f]">{selectedDocument.name}</p>{documentExtraction.isPending ? <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#8176bb]"><LoaderCircle size={12} className="animate-spin" /> Extracting document…</p> : documentExtraction.data && <p className="mt-1 text-[11px] text-[#89849b]">{documentExtraction.data.fileType} · {documentExtraction.data.textLength.toLocaleString()} extracted characters</p>}</div></div>
+                  <button type="button" data-testid="button-remove-document" disabled={documentExtraction.isPending} onClick={removeDocument} aria-label="Remove selected document" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#9a94ab] transition hover:bg-white hover:text-[#a94e48] disabled:opacity-40"><Trash2 size={15} /></button>
+                </div>
+                {documentExtraction.data && <>
+                  {documentExtraction.data.warning && <p role="status" className="mt-3 rounded-lg border border-[#f0dfb8] bg-[#fffaf0] px-3 py-2 text-[11px] leading-5 text-[#856b35]">{documentExtraction.data.warning}</p>}
+                  <label htmlFor="lecture-transcript" className="mb-2 mt-4 block text-[11px] font-bold text-[#5b5672]">Review and edit extracted text <span className="font-medium text-[#9691a5]">· changes are used for Notes, Quiz, and Ask</span></label>
+                  <textarea id="lecture-transcript" data-testid="input-lecture-transcript" value={transcript} onChange={(event) => setTranscript(event.target.value.slice(0, 40000))} maxLength={40000} className="min-h-[190px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-white p-4 text-[13px] leading-6 text-[#302d48] outline-none transition focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10 sm:min-h-[220px]" />
+                  <p className="mt-1.5 text-right text-[10px] text-[#9994aa]">{transcript.length.toLocaleString()} / 40,000 characters</p>
+                </>}
+              </div>}
+              {(uploadError || documentExtraction.isError) && <div role="alert" data-testid="status-document-upload-error" className="rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-3.5 py-3 text-[12px] leading-5 text-[#a94e48]">{uploadError || getApiErrorMessage(documentExtraction.error, 'The document could not be processed. Try another file.')}</div>}
+            </div>}
             <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-5 text-[#9995a8]"><CircleHelp size={13} /> YouTube links are saved as context only. LectureLens never retrieves a transcript from a link.</p>
             <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
               <button data-testid="button-generate-notes" onClick={makeNotes} disabled={!ready || notes.isPending} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#6754d9] px-4 text-[13px] font-bold text-white shadow-[0_5px_14px_rgba(103,84,217,.19)] transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">

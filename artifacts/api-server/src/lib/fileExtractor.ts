@@ -13,7 +13,7 @@ const MAX_TRANSCRIPT_CHARS = 40_000;
 
 export async function extractTextFromFile(
   originalName: string,
-  mimetype: string,
+  _mimetype: string,
   buffer: Buffer,
 ): Promise<FileExtractionResult> {
   const ext = path.extname(originalName).toLowerCase();
@@ -26,11 +26,22 @@ export async function extractTextFromFile(
   let extractedRaw = "";
   let resolvedType = "text/plain";
 
-  if (ext === ".txt" || mimetype.includes("text/plain")) {
+  if (ext === ".txt") {
     resolvedType = "TXT Document";
-    extractedRaw = buffer.toString("utf8");
-  } else if (ext === ".pdf" || mimetype.includes("application/pdf")) {
+    try {
+      extractedRaw = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    } catch {
+      throw new Error("This TXT document is not valid UTF-8 text.");
+    }
+    if (extractedRaw.includes("\0")) {
+      throw new Error("This TXT document appears to contain binary data rather than readable text.");
+    }
+  } else if (ext === ".pdf") {
     resolvedType = "PDF Document";
+    const pdfHeader = Buffer.from("%PDF-");
+    if (!buffer.subarray(0, 1024).includes(pdfHeader)) {
+      throw new Error("This file does not contain a valid PDF signature. Please choose a readable PDF document.");
+    }
     try {
       // Load PDF.js only for PDF uploads. This keeps optional canvas initialization
       // failures from preventing the API server from starting.
@@ -50,11 +61,11 @@ export async function extractTextFromFile(
         "This PDF contains no readable text. It appears to be a scanned image or protected document, which requires OCR to extract text.",
       );
     }
-  } else if (
-    ext === ".docx" ||
-    mimetype.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-  ) {
+  } else if (ext === ".docx") {
     resolvedType = "Word Document (.docx)";
+    if (buffer.length < 4 || buffer[0] !== 0x50 || buffer[1] !== 0x4b || buffer[2] !== 0x03 || buffer[3] !== 0x04) {
+      throw new Error("This file does not have a valid DOCX document signature.");
+    }
     try {
       const result = await mammoth.extractRawText({ buffer });
       extractedRaw = result.value || "";
@@ -68,7 +79,7 @@ export async function extractTextFromFile(
     }
   } else {
     throw new Error(
-      `Unsupported file format (${ext || mimetype}). LectureLens supports .txt, .pdf, and .docx documents.`,
+      `Unsupported file format (${ext || _mimetype || "unknown"}). LectureLens supports .txt, .pdf, and .docx documents.`,
     );
   }
 

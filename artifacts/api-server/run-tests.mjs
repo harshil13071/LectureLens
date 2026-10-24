@@ -18,7 +18,7 @@ await build({
   outExtension: { ".js": ".mjs" },
   sourcemap: "inline",
   plugins: [esbuildPluginPino({ transports: ["pino-pretty"] })],
-  external: ["*.node"],
+  external: ["*.node", "pdf-parse", "pdfjs-dist", "pdfjs-dist/*"],
   banner: {
     js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';
