@@ -363,6 +363,7 @@ button, input, textarea { font: inherit; }
 .font-display { font-family: var(--app-font-serif); }
 .rise-in { animation: rise-in .55s cubic-bezier(.2,.8,.2,1) both; }
 .rise-in-delay { animation: rise-in .65s .12s cubic-bezier(.2,.8,.2,1) both; }
+.pomodoro-progress { transition: stroke-dashoffset 300ms linear; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
 /* The app uses some carefully chosen inline Tailwind colors; keep that design
@@ -464,8 +465,10 @@ main.lecture-lens-dark .material-source-button:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
-  .rise-in-delay {
+  .rise-in-delay,
+  .pomodoro-progress {
     animation: none;
+    transition: none;
   }
 }
 @media print {

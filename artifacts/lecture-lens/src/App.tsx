@@ -10,6 +10,7 @@ import {
   ExternalLink, FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw, Search,
   FileUp, Sparkles, Trash2, Upload, X, Youtube,
 } from 'lucide-react';
+import { PomodoroTimer } from '@/components/PomodoroTimer';
 import {
   Route,
   Switch,
@@ -370,6 +371,7 @@ function Home() {
             <a href="#practice" data-testid="link-practice" className="transition hover:text-[#6754d9]">Practice</a>
             <a href="#ask" data-testid="link-ask" className="transition hover:text-[#6754d9]">Ask</a>
             <a href="#research" data-testid="link-research" className="transition hover:text-[#6754d9]">Research</a>
+            <a href="#timer" data-testid="link-timer" className="transition hover:text-[#6754d9]">Timer</a>
           </nav>
           <div className="hidden items-center gap-2 rounded-full border border-[#e9e6f2] bg-white px-3 py-1.5 text-[12px] font-medium text-[#77738c] sm:flex">
             <span className="h-1.5 w-1.5 rounded-full bg-[#7c68e6]" /> Your personal study space
@@ -593,6 +595,7 @@ function Home() {
             </div>}
           </div>
         </section>
+        <div className="mt-6"><PomodoroTimer /></div>
         <footer className="mt-10 flex flex-col items-center justify-between gap-2 border-t border-[#ebe9f1] pt-5 text-[11px] text-[#a09cad] sm:flex-row"><span className="font-display font-bold tracking-[-.02em] text-[#716c83]">LectureLens</span><span>Make sense of what you heard. Remember what matters.</span></footer>
       </div>
     </main>
