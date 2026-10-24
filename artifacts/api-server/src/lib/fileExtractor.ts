@@ -1,5 +1,4 @@
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
 import path from "node:path";
 
 export interface FileExtractionResult {
@@ -33,6 +32,9 @@ export async function extractTextFromFile(
   } else if (ext === ".pdf" || mimetype.includes("application/pdf")) {
     resolvedType = "PDF Document";
     try {
+      // Load PDF.js only for PDF uploads. This keeps optional canvas initialization
+      // failures from preventing the API server from starting.
+      const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: buffer });
       const parsed = await parser.getText();
       extractedRaw = parsed.text || "";
