@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShortAnswer, useExtractDocumentText, useResearchTopic, type ResearchResult } from '@workspace/api-client-react';
 import {
-  ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard,
+  ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard, Clock3,
   ExternalLink, FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw, Search,
   FileUp, Menu, Moon, Sparkles, Sun, Trash2, Upload, X, Youtube,
 } from 'lucide-react';
@@ -167,13 +167,13 @@ function Home() {
   }, [Boolean(notes.data), savedResearch.length]);
 
   const notesHref = notes.data || notes.isPending || savedResearch.length ? '#notes-output' : '#notes-preview';
-  const navigationItems: Array<{ id: NavigationSection; label: string; href: string }> = [
-    { id: 'workspace', label: 'Workspace', href: '#workspace' },
-    { id: 'notes', label: 'Notes', href: notesHref },
-    { id: 'practice', label: 'Practice', href: '#practice' },
-    { id: 'ask', label: 'Ask', href: '#ask' },
-    { id: 'research', label: 'Research', href: '#research' },
-    { id: 'timer', label: 'Timer', href: '#timer' },
+  const navigationItems: Array<{ id: NavigationSection; label: string; href: string; icon: ReactNode }> = [
+    { id: 'workspace', label: 'Workspace', href: '#workspace', icon: <GraduationCap size={17} /> },
+    { id: 'notes', label: 'Notes', href: notesHref, icon: <FileText size={17} /> },
+    { id: 'practice', label: 'Practice', href: '#practice', icon: <BookOpen size={17} /> },
+    { id: 'ask', label: 'Ask Tutor', href: '#ask', icon: <MessageCircle size={17} /> },
+    { id: 'research', label: 'Research', href: '#research', icon: <Search size={17} /> },
+    { id: 'timer', label: 'Focus Timer', href: '#timer', icon: <Clock3 size={17} /> },
   ];
 
   const clearWorkspace = () => {
@@ -420,24 +420,38 @@ function Home() {
 
   return (
     <main className="lecture-lens-app min-h-[100dvh] bg-[var(--app-bg)] text-[var(--app-text)]" data-theme={theme}>
-      <header className="app-header sticky top-0 z-20 border-b backdrop-blur-xl">
+      <aside className="app-sidebar fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r px-4 py-5 xl:flex" aria-label="Application sidebar">
+        <a href="#workspace" onClick={() => setActiveSection('workspace')} className="flex items-center gap-2.5 px-2 no-underline" data-testid="link-home">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#6754d9] text-white"><GraduationCap size={20} /></span>
+          <span className="font-display text-[18px] font-extrabold tracking-[-.04em]">LectureLens</span>
+        </a>
+        <p className="mb-2 mt-9 px-3 text-[10px] font-bold uppercase tracking-[.15em] text-[var(--app-text-muted)]">Study space</p>
+        <nav aria-label="Main navigation" className="app-sidebar-navigation grid gap-1">
+          {navigationItems.map((item) => <a key={item.id} href={item.href} onClick={() => setActiveSection(item.id)} aria-current={activeSection === item.id ? 'location' : undefined} data-testid={`link-${item.id}`} className={`app-sidebar-link ${activeSection === item.id ? 'is-active' : ''}`}><span aria-hidden="true">{item.icon}</span>{item.label}</a>)}
+        </nav>
+        <div className="mt-auto border-t pt-4">
+          <div className="mb-3 flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] text-[var(--app-text-muted)]"><span className="h-2 w-2 rounded-full bg-[#8b75e8]" />Private study workspace</div>
+          <button type="button" data-testid="button-theme-toggle" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} aria-pressed={theme === 'dark'} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} className="app-sidebar-theme w-full"><span aria-hidden="true">{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</span>{theme === 'dark' ? 'Light appearance' : 'Dark appearance'}</button>
+        </div>
+      </aside>
+      <header className="app-header sticky top-0 z-20 border-b backdrop-blur-xl xl:hidden">
         <div className="mx-auto flex h-[64px] max-w-[1320px] items-center justify-between gap-2 px-3 sm:h-[68px] sm:gap-4 sm:px-6 lg:px-8">
           <a href="#workspace" onClick={() => setActiveSection('workspace')} className="flex shrink-0 items-center gap-2.5 no-underline" data-testid="link-home">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#6754d9] text-white shadow-[0_5px_12px_rgba(103,84,217,.22)]"><GraduationCap size={20} /></span>
             <span className="font-display text-[18px] font-extrabold tracking-[-.04em]">LectureLens</span>
           </a>
-          <nav aria-label="Main navigation" className="app-navigation hidden items-center gap-1 rounded-xl p-1 text-[12px] font-semibold md:flex">
+          <nav aria-label="Main navigation" className="app-navigation hidden items-center gap-1 rounded-xl p-1 text-[12px] font-semibold lg:flex xl:hidden">
             {navigationItems.map((item) => <a key={item.id} href={item.href} onClick={() => setActiveSection(item.id)} aria-current={activeSection === item.id ? 'location' : undefined} data-testid={`link-${item.id}`} className={`app-nav-link rounded-lg px-3 py-2 transition ${activeSection === item.id ? 'is-active' : ''}`}>{item.label}</a>)}
           </nav>
           <div className="flex shrink-0 items-center gap-1.5">
             <button type="button" data-testid="button-theme-toggle" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} aria-pressed={theme === 'dark'} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} className="app-theme-toggle grid h-10 w-10 place-items-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9585ff]">
               {theme === 'dark' ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
             </button>
-            <button type="button" data-testid="button-mobile-navigation" aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={mobileNavOpen} aria-controls={mobileNavOpen ? 'mobile-navigation' : undefined} onClick={() => setMobileNavOpen((open) => !open)} className="app-theme-toggle grid h-10 w-10 place-items-center rounded-xl border md:hidden">
+            <button type="button" data-testid="button-mobile-navigation" aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={mobileNavOpen} aria-controls={mobileNavOpen ? 'mobile-navigation' : undefined} onClick={() => setMobileNavOpen((open) => !open)} className="app-theme-toggle grid h-10 w-10 place-items-center rounded-xl border lg:hidden">
               {mobileNavOpen ? <X size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}
             </button>
           </div>
-          {mobileNavOpen && <nav id="mobile-navigation" aria-label="Mobile main navigation" className="app-mobile-navigation absolute inset-x-3 top-[calc(100%+8px)] z-30 grid gap-1 rounded-2xl border p-2 shadow-xl md:hidden">
+          {mobileNavOpen && <nav id="mobile-navigation" aria-label="Mobile main navigation" className="app-mobile-navigation absolute inset-x-3 top-[calc(100%+8px)] z-30 grid gap-1 rounded-2xl border p-2 shadow-xl lg:hidden">
             {navigationItems.map((item) => <a key={item.id} href={item.href} onClick={() => { setActiveSection(item.id); setMobileNavOpen(false); }} aria-current={activeSection === item.id ? 'location' : undefined} data-testid={`mobile-link-${item.id}`} className={`app-nav-link min-h-11 rounded-xl px-3 py-2.5 text-[13px] font-semibold ${activeSection === item.id ? 'is-active' : ''}`}>{item.label}</a>)}
           </nav>}
           <div className="hidden items-center gap-2 rounded-full border bg-[var(--app-surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--app-text-muted)] xl:flex">
@@ -446,8 +460,8 @@ function Home() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1320px] px-5 pb-20 sm:px-8">
-        <section className="relative overflow-hidden pb-10 pt-12 sm:pb-14 sm:pt-[68px]">
+      <div className="app-content-shell mx-auto max-w-[1320px] px-5 pb-20 sm:px-8">
+        <section className="app-hero relative overflow-hidden pb-10 pt-12 sm:pb-14 sm:pt-[68px]">
           <div className="pointer-events-none absolute -right-10 -top-16 h-72 w-72 rounded-full bg-[#ece8ff] opacity-65 blur-3xl" />
           <div className="pointer-events-none absolute right-[18%] top-16 h-40 w-40 rounded-full border border-[#e5dfff]" />
           <div className="relative grid gap-8 lg:grid-cols-[1fr_350px] lg:items-end">
@@ -455,8 +469,8 @@ function Home() {
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#e6e1fa] bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[.13em] text-[#7565cb]">
                 <Sparkles size={13} /> A clearer way to study
               </div>
-              <h1 className="font-display max-w-[820px] text-[38px] font-extrabold leading-[1.08] tracking-[-.05em] text-[#292641] sm:text-[48px] lg:text-[54px]">Turn lectures into learning.</h1>
-              <p className="mt-5 max-w-[600px] text-[16px] leading-7 text-[#77748c] sm:text-[18px]">Transform lecture transcripts into clear notes, quizzes, and answers.</p>
+              <h1 className="font-display max-w-[820px] text-[36px] font-extrabold leading-[1.08] tracking-[-.045em] text-[#292641] sm:text-[46px] lg:text-[52px]">Your learning space.</h1>
+              <p className="mt-4 max-w-[600px] text-[15px] leading-7 text-[#77748c] sm:text-[17px]">Turn lecture transcripts and documents into notes, practice, and clear answers.</p>
             </div>
             <div className="rise-in-delay hidden lg:block">
               <div className="relative ml-auto w-[310px] rounded-[22px] border border-[#e9e4fb] bg-white p-5 shadow-[0_18px_55px_rgba(69,55,135,.09)]">
