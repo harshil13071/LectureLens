@@ -70,6 +70,12 @@ function extractRateLimitMetadata(headers: Headers, providerMessage?: string): R
     const parsed = parseInt(retryAfter, 10);
     if (!Number.isNaN(parsed) && parsed > 0) {
       retryAfterSeconds = parsed;
+    } else {
+      const retryAt = Date.parse(retryAfter);
+      if (!Number.isNaN(retryAt)) {
+        const secondsUntilRetry = Math.ceil((retryAt - Date.now()) / 1000);
+        if (secondsUntilRetry > 0) retryAfterSeconds = secondsUntilRetry;
+      }
     }
   }
 

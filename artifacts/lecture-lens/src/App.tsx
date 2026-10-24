@@ -29,6 +29,11 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
     const data = (error as { data?: unknown }).data;
     if (data && typeof data === 'object' && 'error' in data && typeof data.error === 'string') {
       const retryAfter = 'retryAfter' in data && typeof data.retryAfter === 'number' ? data.retryAfter : undefined;
+      if ('code' in data && data.code === 'AI_RATE_LIMITED') {
+        return retryAfter
+          ? `The AI service is temporarily rate-limited. Try again in about ${retryAfter} seconds.`
+          : 'The AI service is temporarily rate-limited. Please try again shortly.';
+      }
       if (retryAfter) {
         return `${data.error} Please wait ${retryAfter}s before retrying.`;
       }
@@ -57,6 +62,7 @@ function Home() {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | string>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [generatingMore, setGeneratingMore] = useState(false);
+  const [quizRetryAfter, setQuizRetryAfter] = useState(0);
   const [questionHistory, setQuestionHistory] = useState<Record<string, string[]>>({});
   const [lastCompletedQuiz, setLastCompletedQuiz] = useState<Awaited<ReturnType<ReturnType<typeof useGenerateQuiz>['mutateAsync']>>>();
   const [quizResultSourceKey, setQuizResultSourceKey] = useState('');
@@ -72,6 +78,8 @@ function Home() {
   const [isDraggingDocument, setIsDraggingDocument] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadInFlightRef = useRef(false);
+  const quizRequestInFlightRef = useRef(false);
+  const quizRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notes = useGenerateStudyNotes();
   const quiz = useGenerateQuiz();
   const evaluateAnswer = useEvaluateShortAnswer();
@@ -151,7 +159,7 @@ function Home() {
 
   const makeQuiz = (more = false) => {
     const count = questionCount === 'custom' ? Number(customQuestionCount) : Number(questionCount);
-    if (!ready || quiz.isPending || !Number.isInteger(count) || count < 1 || count > 30) return;
+    if (!ready || quiz.isPending || quizRequestInFlightRef.current || quizRetryAfter > 0 || !Number.isInteger(count) || count < 1 || count > 30) return;
     const priorQuestions = questionHistory[sourceKey] ?? [];
     if (!more) {
       setSelectedAnswers({});
@@ -160,9 +168,14 @@ function Home() {
       setQuizSubmitted(false);
       setLastCompletedQuiz(undefined);
     }
+    if (quizRetryTimerRef.current) clearTimeout(quizRetryTimerRef.current);
+    quizRetryTimerRef.current = null;
+    setQuizRetryAfter(0);
+    quizRequestInFlightRef.current = true;
     setGeneratingMore(more);
     quiz.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), questionType, questionCount: count, difficulty, ...(priorQuestions.length ? { previousQuestions: priorQuestions.slice(-60) } : {}) } }, {
       onSuccess: (result) => {
+        quizRequestInFlightRef.current = false;
         setQuestionHistory((current) => ({ ...current, [sourceKey]: [...new Set([...(current[sourceKey] ?? []), ...result.questions.map((item) => item.question)])] }));
         setLastCompletedQuiz(result);
         setQuizResultSourceKey(sourceKey);
@@ -171,6 +184,22 @@ function Home() {
         setEvaluationError('');
         setQuizSubmitted(false);
         setGeneratingMore(false);
+      },
+      onError: (error) => {
+        quizRequestInFlightRef.current = false;
+        const data = error && typeof error === 'object' && 'data' in error
+          ? (error as { data?: unknown }).data
+          : undefined;
+        const retryAfter = data && typeof data === 'object' && 'code' in data && data.code === 'AI_RATE_LIMITED' && 'retryAfter' in data && typeof data.retryAfter === 'number'
+          ? data.retryAfter
+          : 0;
+        if (retryAfter > 0) {
+          setQuizRetryAfter(retryAfter);
+          quizRetryTimerRef.current = setTimeout(() => {
+            setQuizRetryAfter(0);
+            quizRetryTimerRef.current = null;
+          }, retryAfter * 1000);
+        }
       },
     });
   };
@@ -309,8 +338,8 @@ function Home() {
               <input id="youtube-url" data-testid="input-youtube-url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} maxLength={2048} placeholder="https://youtube.com/watch?v=..." className="h-11 w-full rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] pl-10 pr-3.5 text-[14px] text-[#302d48] outline-none transition focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10" />
             </div>
             <div className="mt-5 inline-flex rounded-xl border border-[#e8e6ef] bg-[#f8f7fb] p-1" role="tablist" aria-label="Study material source">
-              <button type="button" role="tab" aria-selected={materialMode === 'paste'} onClick={() => setMaterialMode('paste')} data-testid="tab-paste-text" className={`rounded-lg px-4 py-2.5 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7765df] focus-visible:ring-offset-2 ${materialMode === 'paste' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:bg-white/70 hover:text-[#5c4bc1]'}`}>Paste Text</button>
-              <button type="button" role="tab" aria-selected={materialMode === 'upload'} onClick={() => setMaterialMode('upload')} data-testid="tab-upload-document" className={`rounded-lg px-4 py-2.5 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7765df] focus-visible:ring-offset-2 ${materialMode === 'upload' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:bg-white/70 hover:text-[#5c4bc1]'}`}>Upload Document</button>
+              <button type="button" role="tab" aria-selected={materialMode === 'paste'} onClick={() => setMaterialMode('paste')} data-testid="tab-paste-text" className={`material-source-button rounded-lg px-4 py-2.5 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7765df] focus-visible:ring-offset-2 ${materialMode === 'paste' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:bg-white/70 hover:text-[#5c4bc1]'}`}>Paste Text</button>
+              <button type="button" role="tab" aria-selected={materialMode === 'upload'} onClick={() => setMaterialMode('upload')} data-testid="tab-upload-document" className={`material-source-button rounded-lg px-4 py-2.5 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7765df] focus-visible:ring-offset-2 ${materialMode === 'upload' ? 'bg-white text-[#5c4bc1] shadow-sm' : 'text-[#858096] hover:bg-white/70 hover:text-[#5c4bc1]'}`}>Upload Document</button>
             </div>
             <div className="mb-2 mt-5 flex items-center justify-between">
               <label className="text-[12px] font-bold text-[#4b4861]" htmlFor="lecture-transcript">{materialMode === 'paste' ? 'Transcript' : 'Study material'}</label>
@@ -350,7 +379,6 @@ function Home() {
               </button>
             </div>
             {notes.isError && <div data-testid="status-notes-error" role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-3.5 py-3 text-[12px] text-[#a94e48]"><X size={15} /> {getApiErrorMessage(notes.error, 'Study notes could not be generated. Please try again.')}</div>}
-            {quiz.isError && <div data-testid="status-quiz-error" role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-3.5 py-3 text-[12px] text-[#a94e48]"><X size={15} /> {getApiErrorMessage(quiz.error, 'The quiz could not be generated. Please try again.')}</div>}
           </div>
 
           <aside id="notes-preview" className="scroll-mt-24 rounded-[22px] border border-[#e9e4f5] bg-[#f2efff] p-5 sm:p-6">
@@ -400,7 +428,7 @@ function Home() {
               </div>
               {questionCount === 'custom' && customQuestionCount !== '' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30) && <p role="alert" className="mt-2 text-[11px] text-[#a94e48]">Enter a whole number from 1 to 30.</p>}
             </div>
-            <button type="button" data-testid="button-generate-quiz" onClick={() => makeQuiz()} disabled={!ready || quiz.isPending || (questionCount === 'custom' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30))} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[13px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{quiz.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}{quiz.isPending ? 'Generating quiz…' : 'Generate Quiz'}</button>
+            <button type="button" data-testid="button-generate-quiz" onClick={() => makeQuiz()} disabled={!ready || quiz.isPending || quizRetryAfter > 0 || (questionCount === 'custom' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30))} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[13px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{quiz.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}{quiz.isPending ? 'Generating quiz…' : quizRetryAfter > 0 ? `Try again in ${quizRetryAfter}s` : 'Generate Quiz'}</button>
             {!ready && !displayQuiz && <p className="mt-2 text-center text-[11px] text-[#908c9f]">Add a transcript above to enable quiz generation.</p>}
             {!displayQuiz && !quiz.isPending && <div className="mt-4 rounded-xl border border-dashed border-[#ded9ed] bg-white px-4 py-4 text-center"><p className="text-[13px] font-semibold text-[#68637d]">Your practice quiz will appear here.</p></div>}
             {quiz.isPending && <div className="mt-5 space-y-3" aria-label="Building quiz">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-[#f4f2f8]" />)}</div>}
@@ -427,8 +455,8 @@ function Home() {
               })}</div>
               {evaluationError && <p role="alert" className="mt-3 text-[12px] text-[#a94e48]">{evaluationError}</p>}
               {!quizSubmitted && <button data-testid="button-submit-quiz" onClick={submitQuiz} disabled={displayQuiz.questions.some((item, index) => item.type === 'short_answer' ? !String(selectedAnswers[index] ?? '').trim() : selectedAnswers[index] === undefined) || evaluateAnswer.isPending} className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{evaluateAnswer.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}{evaluateAnswer.isPending ? 'Evaluating answers…' : 'Check my answers'}</button>}
-              {quizSubmitted && <button type="button" data-testid="button-generate-more-questions" onClick={() => makeQuiz(true)} disabled={quiz.isPending} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#dcd5f7] bg-[#f8f6ff] text-[12px] font-bold text-[#6655c6] transition hover:bg-[#f0edff] disabled:cursor-not-allowed disabled:opacity-50">{quiz.isPending && generatingMore ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}{quiz.isPending && generatingMore ? 'Generating more questions…' : 'Generate More Questions'}</button>}
-              {quiz.isError && generatingMore && <button type="button" onClick={() => makeQuiz(true)} disabled={quiz.isPending} className="mt-2 w-full text-center text-[11px] font-bold text-[#6f5ec7] underline disabled:opacity-50">Retry generating more questions</button>}
+              {quizSubmitted && <button type="button" data-testid="button-generate-more-questions" onClick={() => makeQuiz(true)} disabled={quiz.isPending || quizRetryAfter > 0} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#dcd5f7] bg-[#f8f6ff] text-[12px] font-bold text-[#6655c6] transition hover:bg-[#f0edff] disabled:cursor-not-allowed disabled:opacity-50">{quiz.isPending && generatingMore ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}{quiz.isPending && generatingMore ? 'Generating more questions…' : quizRetryAfter > 0 ? `Try again in ${quizRetryAfter}s` : 'Generate More Questions'}</button>}
+              {quiz.isError && generatingMore && <button type="button" onClick={() => makeQuiz(true)} disabled={quiz.isPending || quizRetryAfter > 0} className="mt-2 w-full text-center text-[11px] font-bold text-[#6f5ec7] underline disabled:opacity-50">{quizRetryAfter > 0 ? `Retry generating more questions in ${quizRetryAfter}s` : 'Retry generating more questions'}</button>}
             </div>}
           </div>
 

@@ -773,6 +773,10 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         transcript: REALISTIC_LECTURE_TRANSCRIPT,
+        questionCount: 10,
+        questionType: "mixed",
+        difficulty: "hard",
+        previousQuestions: ["What does virtual memory provide to a process?"],
       }),
     });
 
@@ -782,5 +786,17 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
     assert.equal(data.code, "AI_RATE_LIMITED");
     assert.equal(data.retryAfter, 10);
     assert.ok(data.error.includes("429"));
+    assert.equal(mockCallCount, 1, "long provider retry delays are surfaced instead of retried automatically");
+
+    returnHeaders = { "Content-Type": "application/json", "Retry-After": new Date(Date.now() + 30_000).toUTCString() };
+    const dateHeaderRes = await fetch(`${baseUrl}/quiz`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript: REALISTIC_LECTURE_TRANSCRIPT }),
+    });
+    assert.equal(dateHeaderRes.status, 429);
+    const dateHeaderData = await dateHeaderRes.json() as { retryAfter: number };
+    assert.ok(dateHeaderData.retryAfter > 0 && dateHeaderData.retryAfter <= 30);
+    assert.equal(mockCallCount, 2);
   });
 });

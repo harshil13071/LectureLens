@@ -438,6 +438,30 @@ main.lecture-lens-dark textarea:focus-visible {
   outline: 2px solid #9585ff;
   outline-offset: 2px;
 }
+main.lecture-lens-dark .material-source-button {
+  min-height: 40px;
+  padding: 0.625rem 1rem !important;
+  border: 1px solid #39364a !important;
+  border-radius: 0.625rem !important;
+  background-color: #181720 !important;
+  color: #c4c1d0 !important;
+  font-weight: 700;
+  cursor: pointer;
+}
+main.lecture-lens-dark .material-source-button:hover {
+  background-color: #242132 !important;
+  color: #f0eef8 !important;
+}
+main.lecture-lens-dark .material-source-button[aria-selected="true"] {
+  border-color: #8e7de5 !important;
+  background-color: #6754d9 !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgb(103 84 217 / 28%);
+}
+main.lecture-lens-dark .material-source-button:focus-visible {
+  outline: 2px solid #b6aaff !important;
+  outline-offset: 2px !important;
+}
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
   .rise-in-delay {
