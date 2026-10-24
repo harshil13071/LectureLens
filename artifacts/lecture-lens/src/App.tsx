@@ -8,11 +8,12 @@ import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShort
 import {
   ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard, Clock3,
   ExternalLink, FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw, Search,
-  FileUp, GitBranch, Layers3, Menu, Moon, Sparkles, Sun, Trash2, Upload, X, Youtube,
+  FileUp, GitBranch, Layers3, Menu, Moon, Sparkles, Sun, Trash2, Upload, Users, X, Youtube,
 } from 'lucide-react';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
 import { FlashcardsWorkspace } from '@/components/FlashcardsWorkspace';
 import { MindMapsWorkspace } from '@/components/MindMapsWorkspace';
+import StudyRooms from '@/pages/study-rooms';
 import { APP_THEME_STORAGE_KEY, parseAppTheme, type AppTheme } from '@/lib/theme';
 import {
   Route,
@@ -28,7 +29,7 @@ type ChatMessage = {
   foundInTranscript?: boolean;
 };
 
-type NavigationSection = 'workspace' | 'notes' | 'flashcards' | 'mindmaps' | 'practice' | 'ask' | 'research' | 'timer';
+type NavigationSection = 'workspace' | 'notes' | 'flashcards' | 'mindmaps' | 'practice' | 'ask' | 'research' | 'timer' | 'rooms';
 
 function readSavedTheme(): AppTheme {
   if (typeof window === 'undefined') return 'dark';
@@ -42,7 +43,7 @@ function readSavedTheme(): AppTheme {
 function sectionForTarget(targetId: string): NavigationSection {
   if (targetId === 'notes-preview' || targetId === 'notes-output') return 'notes';
   const navigationTarget = targetId === 'mind-maps' ? 'mindmaps' : targetId;
-  return ['workspace', 'flashcards', 'mindmaps', 'practice', 'ask', 'research', 'timer'].includes(navigationTarget)
+  return ['workspace', 'flashcards', 'mindmaps', 'practice', 'ask', 'research', 'timer', 'rooms'].includes(navigationTarget)
     ? navigationTarget as NavigationSection
     : 'workspace';
 }
@@ -185,6 +186,7 @@ function Home() {
     { id: 'ask', label: 'Ask Tutor', href: '#ask', icon: <MessageCircle size={17} /> },
     { id: 'research', label: 'Research', href: '#research', icon: <Search size={17} /> },
     { id: 'timer', label: 'Focus Timer', href: '#timer', icon: <Clock3 size={17} /> },
+    { id: 'rooms', label: 'Study Rooms', href: '/rooms', icon: <Users size={17} /> },
   ];
 
   const clearWorkspace = () => {
@@ -725,6 +727,7 @@ function Router() {
     // survives a page crash.
     <RoutedErrorBoundary>
       <Switch>
+        <Route path="/rooms" component={StudyRooms} />
         <Route path="/" component={Home} />
         <Route component={NotFound} />
       </Switch>

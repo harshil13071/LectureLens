@@ -162,7 +162,7 @@ test("getAiCacheKey produces consistent SHA-256 keys", () => {
 test("API Endpoints validation and behavior with mock provider", async (t) => {
   // Start express server on random port
   const server = http.createServer(app);
-  await new Promise<void>((resolve) => server.listen(0, resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address() as { port: number };
   const baseUrl = `http://127.0.0.1:${address.port}/api`;
 
@@ -175,6 +175,47 @@ test("API Endpoints validation and behavior with mock provider", async (t) => {
 
   t.after(() => {
     server.close();
+  });
+
+  await t.test("Study Rooms enforce shared access and invitation revocation (PostgreSQL required)", { skip: !process.env.DATABASE_URL }, async () => {
+    process.env.ROOM_SESSION_SECRET ??= "test-study-room-session-secret-32-characters";
+    const guest = async (displayName: string) => {
+      const response = await fetch(`${baseUrl}/rooms/session`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName }) });
+      assert.equal(response.status, 200);
+      return response.headers.get("set-cookie")!.split(";")[0];
+    };
+    const ownerCookie = await guest("Room owner");
+    const memberCookie = await guest("Room member");
+    const ownerFetch = (path: string, init: RequestInit = {}) => fetch(`${baseUrl}${path}`, { ...init, headers: { "Content-Type": "application/json", Cookie: ownerCookie, ...(init.headers || {}) } });
+    const memberFetch = (path: string, init: RequestInit = {}) => fetch(`${baseUrl}${path}`, { ...init, headers: { "Content-Type": "application/json", Cookie: memberCookie, ...(init.headers || {}) } });
+    const created = await ownerFetch("/rooms", { method: "POST", body: JSON.stringify({ name: "Access test", subject: "Biology", description: "Testing permissions", displayName: "Room owner" }) });
+    assert.equal(created.status, 201);
+    const { room, inviteToken } = await created.json() as { room: { id: string }; inviteToken: string };
+    try {
+      assert.equal((await memberFetch("/rooms/join", { method: "POST", body: JSON.stringify({ inviteToken: "invalid", displayName: "Room member" }) })).status, 404);
+      assert.equal((await memberFetch("/rooms/join", { method: "POST", body: JSON.stringify({ inviteToken, displayName: "Room member" }) })).status, 200);
+      assert.equal((await memberFetch(`/rooms/${room.id}`, { method: "PUT", body: JSON.stringify({ name: "Hijacked", subject: "X", description: "" }) })).status, 403);
+      assert.equal((await ownerFetch(`/rooms/${room.id}`, { method: "PUT", body: JSON.stringify({ name: "Access test renamed", subject: "Biology II", description: "Updated settings" }) })).status, 200);
+      assert.equal((await ownerFetch(`/rooms/${room.id}/materials`, { method: "POST", body: JSON.stringify({ kind: "note", title: "Shared note", content: { text: "Visible to members" } }) })).status, 201);
+      const detail = await memberFetch(`/rooms/${room.id}`);
+      assert.equal(detail.status, 200);
+      assert.equal((await detail.json() as { materials: Array<{ title: string }> }).materials[0]?.title, "Shared note");
+      const another = await guest("Other guest");
+      const unauthorized = await fetch(`${baseUrl}/rooms/${room.id}`, { headers: { Cookie: another } });
+      assert.equal(unauthorized.status, 403);
+      const regenerated = await ownerFetch(`/rooms/${room.id}/invitation`, { method: "POST" });
+      assert.equal(regenerated.status, 200);
+      const { inviteToken: currentInvite } = await regenerated.json() as { inviteToken: string };
+      assert.equal((await memberFetch("/rooms/join", { method: "POST", body: JSON.stringify({ inviteToken, displayName: "Late guest" }) })).status, 404);
+      const members = await memberFetch(`/rooms/${room.id}`);
+      const memberId = (await members.json() as { members: Array<{ id: string; role: string }> }).members.find(m => m.role === "member")!.id;
+      assert.equal((await memberFetch(`/rooms/${room.id}/members/${memberId}`, { method: "DELETE" })).status, 403);
+      assert.equal((await ownerFetch(`/rooms/${room.id}/members/${memberId}`, { method: "DELETE" })).status, 200);
+      assert.equal((await memberFetch(`/rooms/${room.id}`, { method: "GET" })).status, 403);
+      assert.equal((await memberFetch("/rooms/join", { method: "POST", body: JSON.stringify({ inviteToken: currentInvite, displayName: "Removed member" }) })).status, 404);
+    } finally {
+      await ownerFetch(`/rooms/${room.id}`, { method: "DELETE" });
+    }
   });
 
   await t.test("POST /study-notes returns 400 for empty transcript", async () => {
@@ -381,13 +422,13 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
     res.end(JSON.stringify(typeof returnPayload === "function" ? returnPayload(mockCallCount) : returnPayload));
   });
 
-  await new Promise<void>((resolve) => mockGroqServer.listen(0, resolve));
+  await new Promise<void>((resolve) => mockGroqServer.listen(0, "127.0.0.1", resolve));
   const mockAddress = mockGroqServer.address() as { port: number };
   const mockGroqUrl = `http://127.0.0.1:${mockAddress.port}/openai/v1/chat/completions`;
 
   // Start app server
   const server = http.createServer(app);
-  await new Promise<void>((resolve) => server.listen(0, resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address() as { port: number };
   const baseUrl = `http://127.0.0.1:${address.port}/api`;
 
