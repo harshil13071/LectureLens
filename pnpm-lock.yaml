@@ -165,6 +165,9 @@ importers:
         specifier: ^0.4.3
         version: 0.4.3
     devDependencies:
+      '@neon/config':
+        specifier: ^1.9.3
+        version: 1.9.3
       prettier:
         specifier: ^3.9.10
         version: 3.9.10
@@ -880,6 +883,14 @@ packages:
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+
+  '@neon/config@1.9.3':
+    resolution: {integrity: sha512-y+xY27+8orOEvtWRrlRiKZt/FMWG73ITjcL7M3i7NrIO5Ts6N5YcIqCj7rc8d669BVjdjtCUmvWGWyWLH2z5fw==}
+    engines: {node: '>=20.19.0'}
+
+  '@neon/sdk@7.4.0':
+    resolution: {integrity: sha512-lZth/zZeC9bzYS4ZdYoncwYMnYpdz/Z+7kumpPB1yIWHDRBIMv7t/vj3Uy2l22KC31xDiU/YShs2CKXXjzs9JA==}
+    engines: {node: '>=20.19.0'}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -3496,6 +3507,14 @@ snapshots:
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
+
+  '@neon/config@1.9.3':
+    dependencies:
+      '@neon/sdk': 7.4.0
+      jiti: 2.7.0
+      zod: 4.6.5
+
+  '@neon/sdk@7.4.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
