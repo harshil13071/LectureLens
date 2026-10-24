@@ -123,6 +123,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /flashcards:
+    post:
+      operationId: generateFlashcards
+      tags: [lecture-lens]
+      summary: Generate flashcards from study material or a topic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlashcardsInput"
+      responses:
+        "200":
+          description: Generated flashcard deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardDeck"
+        "400":
+          description: Invalid study material or settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: AI provider is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: AI provider rate limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: AI provider request failed or returned invalid flashcards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "504":
+          description: AI provider request timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /quiz/evaluate-answer:
     post:
       operationId: evaluateShortAnswer
@@ -345,6 +393,61 @@ components:
             maxLength: 500
       required:
         - transcript
+    FlashcardsInput:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        sourceText:
+          type: string
+          minLength: 1
+          maxLength: 40000
+        topic:
+          type: string
+          minLength: 2
+          maxLength: 160
+        cardCount:
+          type: integer
+          minimum: 5
+          maximum: 40
+          default: 20
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+          default: medium
+      required:
+        - cardCount
+    FlashcardItem:
+      type: object
+      properties:
+        front:
+          type: string
+          minLength: 1
+          maxLength: 500
+        back:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      required:
+        - front
+        - back
+    FlashcardDeck:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        cards:
+          type: array
+          minItems: 5
+          maxItems: 40
+          items:
+            $ref: "#/components/schemas/FlashcardItem"
+      required:
+        - title
+        - cards
     EvaluateAnswerInput:
       type: object
       properties:

@@ -9,13 +9,14 @@ const projectDir = path.dirname(fileURLToPath(import.meta.url));
 const apiRequire = createRequire(new URL('../api-server/package.json', import.meta.url));
 const { build } = apiRequire('esbuild');
 const outputDir = mkdtempSync(path.join(tmpdir(), 'lecturelens-pomodoro-'));
-const testFiles = ['pomodoro.test.mjs', 'theme.test.mjs'];
+const testFiles = ['pomodoro.test.mjs', 'theme.test.mjs', 'flashcards.test.mjs'];
 
 try {
   await build({
     entryPoints: [
       path.join(projectDir, 'src/lib/pomodoro.test.ts'),
       path.join(projectDir, 'src/lib/theme.test.ts'),
+      path.join(projectDir, 'src/lib/flashcards.test.ts'),
     ],
     platform: 'node',
     bundle: true,

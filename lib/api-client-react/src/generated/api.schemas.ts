@@ -63,6 +63,62 @@ export interface QuizInput {
   previousQuestions?: string[];
 }
 
+export type FlashcardsInputDifficulty = typeof FlashcardsInputDifficulty[keyof typeof FlashcardsInputDifficulty];
+
+
+export const FlashcardsInputDifficulty = {
+  easy: 'easy',
+  medium: 'medium',
+  hard: 'hard',
+} as const;
+
+export interface FlashcardsInput {
+  /** @maxLength 160 */
+  title?: string;
+  /**
+     * @minLength 1
+     * @maxLength 40000
+     */
+  sourceText?: string;
+  /**
+     * @minLength 2
+     * @maxLength 160
+     */
+  topic?: string;
+  /**
+     * @minimum 5
+     * @maximum 40
+     */
+  cardCount: number;
+  difficulty?: FlashcardsInputDifficulty;
+}
+
+export interface FlashcardItem {
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  front: string;
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  back: string;
+}
+
+export interface FlashcardDeck {
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  title: string;
+  /**
+     * @minItems 5
+     * @maxItems 40
+     */
+  cards: FlashcardItem[];
+}
+
 export interface EvaluateAnswerInput {
   question: string;
   studentAnswer: string;

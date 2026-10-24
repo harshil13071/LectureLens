@@ -8,9 +8,10 @@ import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShort
 import {
   ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard, Clock3,
   ExternalLink, FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw, Search,
-  FileUp, Menu, Moon, Sparkles, Sun, Trash2, Upload, X, Youtube,
+  FileUp, Layers3, Menu, Moon, Sparkles, Sun, Trash2, Upload, X, Youtube,
 } from 'lucide-react';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
+import { FlashcardsWorkspace } from '@/components/FlashcardsWorkspace';
 import { APP_THEME_STORAGE_KEY, parseAppTheme, type AppTheme } from '@/lib/theme';
 import {
   Route,
@@ -26,7 +27,7 @@ type ChatMessage = {
   foundInTranscript?: boolean;
 };
 
-type NavigationSection = 'workspace' | 'notes' | 'practice' | 'ask' | 'research' | 'timer';
+type NavigationSection = 'workspace' | 'notes' | 'flashcards' | 'practice' | 'ask' | 'research' | 'timer';
 
 function readSavedTheme(): AppTheme {
   if (typeof window === 'undefined') return 'dark';
@@ -39,7 +40,7 @@ function readSavedTheme(): AppTheme {
 
 function sectionForTarget(targetId: string): NavigationSection {
   if (targetId === 'notes-preview' || targetId === 'notes-output') return 'notes';
-  return ['workspace', 'practice', 'ask', 'research', 'timer'].includes(targetId)
+  return ['workspace', 'flashcards', 'practice', 'ask', 'research', 'timer'].includes(targetId)
     ? targetId as NavigationSection
     : 'workspace';
 }
@@ -139,6 +140,10 @@ function Home() {
   const ready = transcript.trim().length > 0;
   const lengthLabel = `${transcript.length.toLocaleString()} / 40,000`;
   const sourceKey = getMaterialKey(materialMode, transcript.trim());
+  const flashcardNotesText = [
+    notes.data ? [notes.data.overview, ...notes.data.topics.flatMap((item) => [item.title, ...item.notes]), ...notes.data.keyConcepts.flatMap((item) => [item.term, item.definition]), ...notes.data.takeaways, notes.data.quickRevision].join('\n') : '',
+    ...savedResearch.map(formatResearchMarkdown),
+  ].filter(Boolean).join('\n\n').slice(0, 40000);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -155,7 +160,7 @@ function Home() {
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return;
-    const ids = ['workspace', 'notes-preview', 'notes-output', 'practice', 'ask', 'research', 'timer'];
+    const ids = ['workspace', 'notes-preview', 'notes-output', 'flashcards', 'practice', 'ask', 'research', 'timer'];
     const targets = ids.map((id) => document.getElementById(id)).filter((element): element is HTMLElement => element !== null);
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting)
@@ -170,6 +175,7 @@ function Home() {
   const navigationItems: Array<{ id: NavigationSection; label: string; href: string; icon: ReactNode }> = [
     { id: 'workspace', label: 'Workspace', href: '#workspace', icon: <GraduationCap size={17} /> },
     { id: 'notes', label: 'Notes', href: notesHref, icon: <FileText size={17} /> },
+    { id: 'flashcards', label: 'Flashcards', href: '#flashcards', icon: <Layers3 size={17} /> },
     { id: 'practice', label: 'Practice', href: '#practice', icon: <BookOpen size={17} /> },
     { id: 'ask', label: 'Ask Tutor', href: '#ask', icon: <MessageCircle size={17} /> },
     { id: 'research', label: 'Research', href: '#research', icon: <Search size={17} /> },
@@ -584,6 +590,15 @@ function Home() {
             </article>)}
           </div>}
         </section>}
+
+        <div className="mt-6">
+          <FlashcardsWorkspace
+            workspaceMaterial={transcript}
+            workspaceTitle={title}
+            savedNotesText={flashcardNotesText}
+            onNavigateWorkspace={() => { window.location.hash = 'workspace'; setActiveSection('workspace'); }}
+          />
+        </div>
 
         <section id="research" className="mt-6 scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-7">
           <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><Search size={19} /></div><div><h2 className="font-display text-[20px] font-bold tracking-[-.03em]">Research</h2><p className="text-[12px] text-[#908c9f]">Explore a question with a sourced answer synthesized from current web results.</p></div></div>

@@ -99,6 +99,50 @@ export const GenerateQuizResponse = zod.object({
 
 
 /**
+ * @summary Generate flashcards from study material or a topic
+ */
+export const generateFlashcardsBodyTitleMax = 160;
+
+export const generateFlashcardsBodySourceTextMax = 40000;
+
+export const generateFlashcardsBodyTopicMin = 2;
+export const generateFlashcardsBodyTopicMax = 160;
+
+export const generateFlashcardsBodyCardCountDefault = 20;
+export const generateFlashcardsBodyCardCountMin = 5;
+export const generateFlashcardsBodyCardCountMax = 40;
+
+export const generateFlashcardsBodyDifficultyDefault = `medium`;
+
+export const GenerateFlashcardsBody = zod.object({
+  "title": zod.string().max(generateFlashcardsBodyTitleMax).optional(),
+  "sourceText": zod.string().min(1).max(generateFlashcardsBodySourceTextMax).optional(),
+  "topic": zod.string().min(generateFlashcardsBodyTopicMin).max(generateFlashcardsBodyTopicMax).optional(),
+  "cardCount": zod.number().int().min(generateFlashcardsBodyCardCountMin).max(generateFlashcardsBodyCardCountMax).default(generateFlashcardsBodyCardCountDefault),
+  "difficulty": zod.enum(['easy', 'medium', 'hard']).default(generateFlashcardsBodyDifficultyDefault)
+})
+
+export const generateFlashcardsResponseTitleMax = 160;
+
+export const generateFlashcardsResponseCardsItemFrontMax = 500;
+
+export const generateFlashcardsResponseCardsItemBackMax = 1000;
+
+export const generateFlashcardsResponseCardsMin = 5;
+export const generateFlashcardsResponseCardsMax = 40;
+
+
+
+export const GenerateFlashcardsResponse = zod.object({
+  "title": zod.string().min(1).max(generateFlashcardsResponseTitleMax),
+  "cards": zod.array(zod.object({
+  "front": zod.string().min(1).max(generateFlashcardsResponseCardsItemFrontMax),
+  "back": zod.string().min(1).max(generateFlashcardsResponseCardsItemBackMax)
+})).min(generateFlashcardsResponseCardsMin).max(generateFlashcardsResponseCardsMax)
+})
+
+
+/**
  * @summary Evaluate a student short answer against the expected answer and rubric
  */
 export const EvaluateShortAnswerBody = zod.object({

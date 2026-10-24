@@ -700,6 +700,77 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
     assert.match(shortResponseBody.error, /returned 5 questions; 10 were requested/);
   });
 
+  await t.test("Flashcards validate source material, respect card count, and reject incomplete AI output", async () => {
+    mockCallCount = 0;
+    const missingSource = await fetch(`${baseUrl}/flashcards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardCount: 5, difficulty: "easy" }),
+    });
+    assert.equal(missingSource.status, 400);
+    assert.equal(mockCallCount, 0);
+
+    returnStatus = 200;
+    returnPayload = {
+      choices: [{ message: { content: JSON.stringify({
+        title: "Virtual Memory",
+        cards: Array.from({ length: 10 }, (_, index) => ({ front: `Question ${index + 1}`, back: `Answer ${index + 1}` })),
+      }) } }],
+    };
+    const generated = await fetch(`${baseUrl}/flashcards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: "Virtual memory", sourceText: REALISTIC_LECTURE_TRANSCRIPT, cardCount: 10, difficulty: "hard" }),
+    });
+    assert.equal(generated.status, 200);
+    const generatedBody = await generated.json() as { cards: Array<{ front: string; back: string }> };
+    assert.equal(generatedBody.cards.length, 10);
+    assert.equal(generatedBody.cards[0].front, "Question 1");
+    assert.ok(generatedBody.cards[0].back);
+    const messages = lastRequestBody?.messages as Array<{ role: string; content: string }>;
+    assert.ok(messages[0].content.includes("Generate exactly 10 distinct question-and-answer flashcards at hard difficulty"));
+    assert.ok(messages[1].content.includes("Virtual memory"));
+    assert.ok(messages[1].content.includes(REALISTIC_LECTURE_TRANSCRIPT.trim()));
+
+    returnPayload = {
+      choices: [{ message: { content: JSON.stringify({
+        title: "Virtual Memory",
+        cards: Array.from({ length: 5 }, (_, index) => ({ front: `Short ${index + 1}`, back: `Answer ${index + 1}` })),
+      }) } }],
+    };
+    const incomplete = await fetch(`${baseUrl}/flashcards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: "Virtual memory", cardCount: 10 }),
+    });
+    assert.equal(incomplete.status, 502);
+    const incompleteBody = await incomplete.json() as { error: string };
+    assert.match(incompleteBody.error, /returned 5 cards; 10 were requested/);
+
+    returnPayload = { choices: [{ message: { content: "not valid JSON" } }] };
+    const malformed = await fetch(`${baseUrl}/flashcards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: "Virtual memory", cardCount: 5 }),
+    });
+    assert.equal(malformed.status, 502);
+
+    returnPayload = {
+      choices: [{ message: { content: JSON.stringify({
+        title: "Virtual Memory",
+        cards: Array.from({ length: 5 }, () => ({ front: "Repeated question", back: "Answer" })),
+      }) } }],
+    };
+    const duplicate = await fetch(`${baseUrl}/flashcards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: "Virtual memory", cardCount: 5 }),
+    });
+    assert.equal(duplicate.status, 502);
+    const duplicateBody = await duplicate.json() as { error: string };
+    assert.match(duplicateBody.error, /duplicate questions/);
+  });
+
   // 4. Test Ask with conversation history and context
   await t.test("Ask tutor with conversation history", async () => {
     mockCallCount = 0;
