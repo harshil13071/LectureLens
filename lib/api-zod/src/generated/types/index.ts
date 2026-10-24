@@ -7,6 +7,8 @@
  */
 
 export * from './apiError';
+export * from './conversationMessage';
+export * from './conversationMessageRole';
 export * from './healthStatus';
 export * from './keyConcept';
 export * from './lectureAnswer';

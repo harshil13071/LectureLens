@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "LectureLens"
-description = "An AI study assistant for college students that turns pasted lecture transcripts into structured notes, quizzes, and transcript-grounded answers."
+description = "An AI study assistant for college students that turns pasted lecture transcripts into structured notes and quizzes, and answers lecture-related or general questions."
 version = "1.0.0"
 id = "artifacts/lecture-lens"
 router = "path"

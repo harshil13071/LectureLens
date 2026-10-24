@@ -18,6 +18,11 @@ import {
 } from 'wouter';
 
 const queryClient = new QueryClient();
+type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+  foundInTranscript?: boolean;
+};
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object' && 'data' in error) {
@@ -34,6 +39,7 @@ function Home() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [transcript, setTranscript] = useState('');
   const [question, setQuestion] = useState('');
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -48,6 +54,7 @@ function Home() {
     setYoutubeUrl('');
     setTranscript('');
     setQuestion('');
+    setChatHistory([]);
     setSelectedAnswers({});
     setQuizSubmitted(false);
     setCopied(false);
@@ -68,8 +75,30 @@ function Home() {
   };
   const askQuestion = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!ready || !question.trim()) return;
-    ask.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), question: question.trim() } });
+    const submittedQuestion = question.trim();
+    if (!submittedQuestion || ask.isPending) return;
+    ask.mutate(
+      {
+        data: {
+          title: title.trim() || undefined,
+          transcript: transcript.trim() || undefined,
+          conversation: chatHistory.slice(-10).map(({ role, content }) => ({ role, content })),
+          question: submittedQuestion,
+        },
+      },
+      {
+        onSuccess: (answer) => {
+          const userMessage: ChatMessage = { role: 'user', content: submittedQuestion };
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: answer.answer,
+            foundInTranscript: answer.foundInTranscript,
+          };
+          setChatHistory((current) => [...current, userMessage, assistantMessage].slice(-12));
+          setQuestion('');
+        },
+      },
+    );
   };
   const getNotesText = () => {
     const result = notes.data;
@@ -104,20 +133,20 @@ function Home() {
   const score = quiz.data?.questions.reduce((total, item, index) => total + (selectedAnswers[index] === item.correctIndex ? 1 : 0), 0) ?? 0;
 
   return (
-    <main className="min-h-[100dvh] bg-[#f8f7fc] text-[#282641]">
+    <main className="lecture-lens-dark min-h-[100dvh] bg-[#f8f7fc] text-[#282641]">
       <header className="sticky top-0 z-20 border-b border-[#eae8f1] bg-[#faf9fd]/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-[68px] max-w-[1320px] items-center justify-between px-5 sm:px-8">
+        <div className="mx-auto flex h-[68px] max-w-[1320px] items-center justify-between gap-2 px-3 sm:px-8">
           <a href="#" className="flex items-center gap-2.5 no-underline" data-testid="link-home">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#6754d9] text-white shadow-[0_5px_12px_rgba(103,84,217,.22)]"><GraduationCap size={20} /></span>
             <span className="font-display text-[18px] font-extrabold tracking-[-.04em] text-[#292641]">LectureLens</span>
           </a>
-          <nav aria-label="Main navigation" className="hidden items-center gap-5 text-[12px] font-semibold text-[#77738c] sm:flex">
+          <nav aria-label="Main navigation" className="flex items-center gap-1.5 whitespace-nowrap text-[9px] font-semibold text-[#77738c] sm:gap-5 sm:text-[12px]">
             <a href="#workspace" data-testid="link-workspace" className="transition hover:text-[#6754d9]">Workspace</a>
             <a href="#notes-preview" data-testid="link-notes-preview" className="transition hover:text-[#6754d9]">Notes</a>
             <a href="#practice" data-testid="link-practice" className="transition hover:text-[#6754d9]">Practice</a>
             <a href="#ask" data-testid="link-ask" className="transition hover:text-[#6754d9]">Ask</a>
           </nav>
-          <div className="flex items-center gap-2 rounded-full border border-[#e9e6f2] bg-white px-3 py-1.5 text-[12px] font-medium text-[#77738c]">
+          <div className="hidden items-center gap-2 rounded-full border border-[#e9e6f2] bg-white px-3 py-1.5 text-[12px] font-medium text-[#77738c] sm:flex">
             <span className="h-1.5 w-1.5 rounded-full bg-[#7c68e6]" /> Your personal study space
           </div>
         </div>
@@ -249,17 +278,25 @@ function Home() {
           </div>
 
           <div id="ask" className="scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-6">
-            <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><MessageCircle size={19} /></div><div><h2 className="font-display text-[19px] font-bold tracking-[-.03em]">Ask your lecture</h2><p className="text-[12px] text-[#908c9f]">Get an answer grounded in the transcript you pasted.</p></div></div>
+            <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><MessageCircle size={19} /></div><div><h2 className="font-display text-[19px] font-bold tracking-[-.03em]">Ask your AI tutor</h2><p className="text-[12px] text-[#908c9f]">Your AI study companion — ask anything about your lecture or beyond.</p></div></div>
             <form onSubmit={askQuestion} className="mt-5">
               <label htmlFor="lecture-question" className="mb-2 block text-[12px] font-bold text-[#4b4861]">What would you like to understand?</label>
-              <textarea id="lecture-question" data-testid="input-lecture-question" value={question} onChange={(event) => setQuestion(event.target.value.slice(0, 2000))} maxLength={2000} placeholder="Ask about a concept, example, or connection…" className="min-h-[105px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-3.5 text-[13px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10" />
-              <div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-[#a39fb0]">{question.length} / 2,000</span><button type="submit" data-testid="button-ask-lecture" disabled={!ready || !question.trim() || ask.isPending} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#6754d9] px-3.5 text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{ask.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <ArrowRight size={14} />}{ask.isPending ? 'Thinking…' : 'Ask question'}</button></div>
+              <textarea id="lecture-question" data-testid="input-lecture-question" value={question} onChange={(event) => setQuestion(event.target.value.slice(0, 2000))} maxLength={2000} placeholder="Ask anything — about a lecture concept, JDK, or another topic…" className="min-h-[105px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-3.5 text-[13px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10" />
+              <div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-[#a39fb0]">{question.length} / 2,000</span><button type="submit" data-testid="button-ask-lecture" disabled={!question.trim() || ask.isPending} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#6754d9] px-3.5 text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{ask.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <ArrowRight size={14} />}{ask.isPending ? 'Thinking…' : 'Ask question'}</button></div>
             </form>
-            {!ready && <div className="mt-4 rounded-xl border border-dashed border-[#ded9ed] bg-[#fbfaff] px-4 py-4 text-center text-[12px] text-[#8e899f]">Paste a transcript above to ask a question.</div>}
+            {!ready && <div className="mt-4 rounded-xl border border-dashed border-[#ded9ed] bg-[#fbfaff] px-4 py-3 text-center text-[12px] text-[#8e899f]">No transcript added — ask a general question, or paste lecture text above for extra context.</div>}
             {ask.isError && <div data-testid="status-ask-error" role="alert" className="mt-4 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-3.5 py-3 text-[12px] text-[#a94e48]">{getApiErrorMessage(ask.error, 'We couldn’t answer just now. Please try again.')}</div>}
-            {ask.data && <div className={`mt-4 rounded-xl border p-4 ${ask.data.foundInTranscript ? 'border-[#e5e1f3] bg-[#faf9fe]' : 'border-[#e9e4d8] bg-[#fffdf7]'}`}>
-              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.1em]">{ask.data.foundInTranscript ? <><CheckCircle2 size={14} className="text-[#6f61c6]" /><span className="text-[#7166ab]">Found in your transcript</span></> : <><CircleHelp size={14} className="text-[#a2844c]" /><span className="text-[#967a48]">Not found in your transcript</span></>}</div>
-              <p className="mt-2.5 text-[13px] leading-6 text-[#5d596f]">{ask.data.answer}</p>
+            {chatHistory.length > 0 && <div className="mt-5 space-y-3" aria-live="polite">
+              {chatHistory.map((message, index) => message.role === 'user'
+                ? <div key={`chat-${index}`} className="ml-auto max-w-[90%] rounded-xl border border-[#e5e1f3] bg-[#f5f2ff] px-3.5 py-3 text-[13px] leading-6 text-[#51467c]">{message.content}</div>
+                : <article key={`chat-${index}`} className="rounded-xl border border-[#e9e7ef] bg-[#faf9fe] p-4">
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.1em] text-[#7166ab]">
+                    {message.foundInTranscript ? <CheckCircle2 size={13} /> : <Sparkles size={13} />}
+                    {message.foundInTranscript ? 'Lecture context used' : 'AI tutor answer'}
+                  </div>
+                  <p className="mt-2.5 whitespace-pre-wrap text-[13px] leading-6 text-[#5d596f]">{message.content}</p>
+                </article>)}
+              {ask.isPending && <div className="flex items-center gap-2 rounded-xl border border-[#e9e7ef] bg-[#faf9fe] px-4 py-3 text-[12px] text-[#77738c]" role="status"><LoaderCircle size={14} className="animate-spin" /> Thinking through your question…</div>}
             </div>}
           </div>
         </section>

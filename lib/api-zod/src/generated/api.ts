@@ -85,11 +85,15 @@ export const GenerateQuizResponse = zod.object({
 
 
 /**
- * @summary Answer a question using a lecture transcript
+ * @summary Answer a question with optional lecture context
  */
 export const askLectureBodyTitleMax = 160;
 
 export const askLectureBodyTranscriptMax = 40000;
+
+export const askLectureBodyConversationItemContentMax = 4000;
+
+export const askLectureBodyConversationMax = 12;
 
 export const askLectureBodyQuestionMax = 2000;
 
@@ -97,7 +101,11 @@ export const askLectureBodyQuestionMax = 2000;
 
 export const AskLectureBody = zod.object({
   "title": zod.string().max(askLectureBodyTitleMax).optional(),
-  "transcript": zod.string().min(1).max(askLectureBodyTranscriptMax),
+  "transcript": zod.string().max(askLectureBodyTranscriptMax).optional().describe('Optional lecture transcript used as supporting context.'),
+  "conversation": zod.array(zod.object({
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().max(askLectureBodyConversationItemContentMax)
+})).max(askLectureBodyConversationMax).optional(),
   "question": zod.string().min(1).max(askLectureBodyQuestionMax)
 })
 

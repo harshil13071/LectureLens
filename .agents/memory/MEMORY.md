@@ -1,1 +1,2 @@
 - [LectureLens scope](lecture-lens-scope.md) — Keep the app transcript-first and OpenRouter-only; no YouTube extraction, accounts, database, or subscriptions.
+- [Node 20 codegen compatibility](node20-codegen-compatibility.md) — Orval's generated Zod code path uses Map.groupBy, which is missing from this workspace's Node 20 runtime.

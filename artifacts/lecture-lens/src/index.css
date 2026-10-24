@@ -323,7 +323,7 @@
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   --background: 252 56% 98%; --foreground: 245 26% 17%; --border: 245 24% 90%;
   --card: 0 0% 100%; --card-foreground: 245 26% 17%; --card-border: 245 24% 91%;
   --sidebar: 248 50% 97%; --sidebar-foreground: 245 26% 17%; --sidebar-border: 245 24% 90%;
@@ -353,6 +353,9 @@
   --muted: 250 22% 20%; --muted-foreground: 247 14% 68%; --accent: 268 35% 23%; --accent-foreground: 270 50% 90%;
   --destructive: 0 62% 54%; --destructive-foreground: 0 0% 100%; --input: 249 20% 27%; --ring: 250 76% 67%;
 }
+:root {
+  color-scheme: dark;
+}
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 button, input, textarea { font: inherit; }
@@ -361,6 +364,113 @@ button, input, textarea { font: inherit; }
 .rise-in { animation: rise-in .55s cubic-bezier(.2,.8,.2,1) both; }
 .rise-in-delay { animation: rise-in .65s .12s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+/* The app uses some carefully chosen inline Tailwind colors; keep that design
+   but remap its light surfaces and text for the dark-first workspace. */
+main.lecture-lens-dark {
+  color-scheme: dark;
+  background: #0d0c12 !important;
+  color: #f0eef8 !important;
+}
+main.lecture-lens-dark [class*="bg-white"],
+main.lecture-lens-dark [class*="bg-[#f"],
+main.lecture-lens-dark [class*="bg-[#e"] {
+  background-color: #181720 !important;
+}
+main.lecture-lens-dark [class*="bg-[#f2efff"],
+main.lecture-lens-dark [class*="bg-[#f0edff"],
+main.lecture-lens-dark [class*="bg-[#eeebff"],
+main.lecture-lens-dark [class*="bg-[#f5f2ff"],
+main.lecture-lens-dark [class*="bg-[#f3f0ff"] {
+  background-color: #211d33 !important;
+}
+main.lecture-lens-dark [class*="bg-[#fff8f7"] {
+  background-color: #301d20 !important;
+}
+main.lecture-lens-dark [class*="bg-[#f1fbf6"],
+main.lecture-lens-dark [class*="bg-[#f2faf6"] {
+  background-color: #172a23 !important;
+}
+main.lecture-lens-dark [class*="border-[#e"],
+main.lecture-lens-dark [class*="border-[#f"],
+main.lecture-lens-dark [class*="border-[#d"],
+main.lecture-lens-dark [class*="border-white"] {
+  border-color: #302e3c !important;
+}
+main.lecture-lens-dark [class*="text-[#"] {
+  color: #c4c1d0 !important;
+}
+main.lecture-lens-dark [class*="text-[#6"],
+main.lecture-lens-dark [class*="text-[#7"] {
+  color: #b3a6ff !important;
+}
+main.lecture-lens-dark [class*="text-[#a94"],
+main.lecture-lens-dark [class*="text-[#a54"] {
+  color: #ffaaa4 !important;
+}
+main.lecture-lens-dark [class*="text-[#327"],
+main.lecture-lens-dark [class*="text-[#4a7"] {
+  color: #8ddbb2 !important;
+}
+main.lecture-lens-dark [class*="placeholder:text-[#"]::placeholder {
+  color: #858194 !important;
+}
+main.lecture-lens-dark header {
+  background-color: rgb(16 15 22 / 88%) !important;
+  border-color: #282633 !important;
+}
+main.lecture-lens-dark input,
+main.lecture-lens-dark textarea {
+  color: #eeecf6 !important;
+}
+main.lecture-lens-dark input:focus,
+main.lecture-lens-dark textarea:focus {
+  border-color: #7663df !important;
+}
+main.lecture-lens-dark a,
+main.lecture-lens-dark button {
+  transition-duration: 160ms;
+}
+main.lecture-lens-dark button:focus-visible,
+main.lecture-lens-dark a:focus-visible,
+main.lecture-lens-dark input:focus-visible,
+main.lecture-lens-dark textarea:focus-visible {
+  outline: 2px solid #9585ff;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .rise-in-delay {
+    animation: none;
+  }
+}
+@media print {
+  body,
+  main.lecture-lens-dark {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  main.lecture-lens-dark > header,
+  main.lecture-lens-dark > div > :not(#notes-output) {
+    display: none !important;
+  }
+  main.lecture-lens-dark #notes-output,
+  main.lecture-lens-dark #notes-output * {
+    color: #171717 !important;
+    background: #fff !important;
+    border-color: #ddd !important;
+    box-shadow: none !important;
+  }
+  main.lecture-lens-dark #notes-output {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  main.lecture-lens-dark #notes-output button {
+    display: none !important;
+  }
+}
 
 /**
  * Using the elevate system.

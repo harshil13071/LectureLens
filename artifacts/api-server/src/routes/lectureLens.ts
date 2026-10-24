@@ -22,7 +22,13 @@ function sendAiError(
 ): void {
   if (error instanceof LectureLensAiError) {
     req.log.warn(
-      { operation, code: error.code, status: error.status },
+      {
+        operation,
+        code: error.code,
+        status: error.status,
+        providerStatus: error.providerStatus,
+        providerMessage: error.providerMessage,
+      },
       "LectureLens AI request failed",
     );
     res.status(error.status).json({ error: error.message, code: error.code });
@@ -82,23 +88,20 @@ router.post("/quiz", async (req, res): Promise<void> => {
 
 router.post("/ask", async (req, res): Promise<void> => {
   const parsed = AskLectureBody.safeParse(req.body);
-  if (
-    !parsed.success ||
-    !parsed.data.transcript.trim() ||
-    !parsed.data.question.trim()
-  ) {
+  if (!parsed.success || !parsed.data.question.trim()) {
     res.status(400).json({
-      error: "Provide a lecture transcript and a question.",
+      error: "Provide a question to ask the AI tutor.",
       code: "INVALID_QUESTION",
     });
     return;
   }
 
-  const { title, transcript, question } = parsed.data;
+  const { title, transcript, question, conversation = [] } = parsed.data;
   try {
     const result = await requestLectureLensJson(
-      "You are LectureLens, a careful college study assistant. Answer only from the provided lecture transcript. Return valid JSON only with exactly these fields: answer (string) and foundInTranscript (boolean). If the transcript does not contain enough information to answer, set foundInTranscript to false and clearly say that the lecture transcript does not cover the answer. Never fill gaps with outside knowledge.",
-      `Lecture${title ? ` titled "${title}"` : ""} transcript:\n${transcript}\n\nStudent question:\n${question}`,
+      "You are LectureLens, a careful, friendly AI tutor. Answer the student's question using your general knowledge. Treat any lecture transcript as optional supporting context, never as a limit on what you can answer. When relevant, explain how the answer connects to the lecture; do not claim a point appears in the transcript unless it does. If uncertain, say so and avoid inventing facts. Give clear, beginner-friendly answers with examples when useful. Structure multi-part answers with short headings or bullets, while keeping simple answers concise. Return valid JSON only with exactly these fields: answer (string) and foundInTranscript (boolean). Set foundInTranscript true only if the transcript itself contains information that directly supports the answer; otherwise false.",
+      `${transcript?.trim() ? `Lecture${title ? ` titled "${title}"` : ""} transcript (supporting context):\n${transcript.trim()}\n\n` : ""}Student question:\n${question}`,
+      conversation,
     );
     res.json(AskLectureResponse.parse(result));
   } catch (error) {

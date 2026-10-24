@@ -320,7 +320,7 @@ export const getAskLectureUrl = () => {
 }
 
 /**
- * @summary Answer a question using a lecture transcript
+ * @summary Answer a question with optional lecture context
  */
 export const askLecture = async (lectureQuestionInput: LectureQuestionInput, options?: Parameters<typeof customFetch>[1]): Promise<LectureAnswer> => {
 
@@ -386,7 +386,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AskLectureMutationVariables = {data: BodyType<LectureQuestionInput>}
 
     /**
- * @summary Answer a question using a lecture transcript
+ * @summary Answer a question with optional lecture context
  */
 export const useAskLecture = <TError = ErrorType<ApiError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof askLecture>>, TError,AskLectureMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}

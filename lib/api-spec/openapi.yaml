@@ -126,7 +126,7 @@ paths:
     post:
       operationId: askLecture
       tags: [lecture-lens]
-      summary: Answer a question using a lecture transcript
+      summary: Answer a question with optional lecture context
       requestBody:
         required: true
         content:
@@ -135,7 +135,7 @@ paths:
               $ref: "#/components/schemas/LectureQuestionInput"
       responses:
         "200":
-          description: Transcript-grounded answer
+          description: AI tutor answer with transcript context when provided
           content:
             application/json:
               schema:
@@ -214,15 +214,31 @@ components:
           maxLength: 160
         transcript:
           type: string
-          minLength: 1
           maxLength: 40000
+          description: Optional lecture transcript used as supporting context.
+        conversation:
+          type: array
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/ConversationMessage"
         question:
           type: string
           minLength: 1
           maxLength: 2000
       required:
-        - transcript
         - question
+    ConversationMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          maxLength: 4000
+      required:
+        - role
+        - content
     StudyNotes:
       type: object
       properties:

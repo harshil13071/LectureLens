@@ -31,14 +31,30 @@ export interface QuizInput {
   transcript: string;
 }
 
+export type ConversationMessageRole = typeof ConversationMessageRole[keyof typeof ConversationMessageRole];
+
+
+export const ConversationMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface ConversationMessage {
+  role: ConversationMessageRole;
+  /** @maxLength 4000 */
+  content: string;
+}
+
 export interface LectureQuestionInput {
   /** @maxLength 160 */
   title?: string;
   /**
-     * @minLength 1
+     * Optional lecture transcript used as supporting context.
      * @maxLength 40000
      */
-  transcript: string;
+  transcript?: string;
+  /** @maxItems 12 */
+  conversation?: ConversationMessage[];
   /**
      * @minLength 1
      * @maxLength 2000
