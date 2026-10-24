@@ -4,7 +4,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
-import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes } from '@workspace/api-client-react';
+import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShortAnswer } from '@workspace/api-client-react';
 import {
   ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard,
   FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw,
@@ -44,11 +44,18 @@ function Home() {
   const [transcript, setTranscript] = useState('');
   const [question, setQuestion] = useState('');
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | string>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [questionType, setQuestionType] = useState<'mcq' | 'short_answer' | 'mixed'>('mcq');
+  const [questionCount, setQuestionCount] = useState('5');
+  const [customQuestionCount, setCustomQuestionCount] = useState('');
+  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | 'mixed'>('medium');
+  const [evaluations, setEvaluations] = useState<Record<number, Awaited<ReturnType<ReturnType<typeof useEvaluateShortAnswer>['mutateAsync']>>>>({});
+  const [evaluationError, setEvaluationError] = useState('');
   const [copied, setCopied] = useState(false);
   const notes = useGenerateStudyNotes();
   const quiz = useGenerateQuiz();
+  const evaluateAnswer = useEvaluateShortAnswer();
   const ask = useAskLecture();
   const ready = transcript.trim().length > 0;
   const lengthLabel = `${transcript.length.toLocaleString()} / 40,000`;
@@ -71,11 +78,30 @@ function Home() {
     if (!ready || notes.isPending) return;
     notes.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), youtubeUrl: youtubeUrl.trim() || undefined } });
   };
+
   const makeQuiz = () => {
-    if (!ready || quiz.isPending) return;
+    const count = questionCount === 'custom' ? Number(customQuestionCount) : Number(questionCount);
+    if (!ready || quiz.isPending || !Number.isInteger(count) || count < 1 || count > 30) return;
     setSelectedAnswers({});
+    setEvaluations({});
+    setEvaluationError('');
     setQuizSubmitted(false);
-    quiz.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim() } });
+    quiz.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), questionType, questionCount: count, difficulty } });
+  };
+  const score = quiz.data?.questions.reduce((total, item, index) => total + (item.type === 'short_answer' ? (evaluations[index]?.isCorrect ? 1 : 0) : (selectedAnswers[index] === item.correctIndex ? 1 : 0)), 0) ?? 0;
+  const submitQuiz = async () => {
+    if (!quiz.data || evaluateAnswer.isPending) return;
+    setEvaluationError('');
+    try {
+      const shortAnswers = await Promise.all(quiz.data.questions.map(async (item, index) => {
+        if (item.type !== 'short_answer') return null;
+        return evaluateAnswer.mutateAsync({ data: { question: item.question, studentAnswer: String(selectedAnswers[index] ?? ''), expectedAnswer: item.expectedAnswer ?? '', keyPoints: item.keyPoints ?? [] } }).then((result) => [index, result] as const);
+      }));
+      setEvaluations(Object.fromEntries(shortAnswers.filter((entry): entry is NonNullable<typeof entry> => entry !== null)));
+      setQuizSubmitted(true);
+    } catch {
+      setEvaluationError('Some answers could not be evaluated. Please try checking your answers again.');
+    }
   };
   const askQuestion = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -134,7 +160,7 @@ function Home() {
     link.click();
     URL.revokeObjectURL(url);
   };
-  const score = quiz.data?.questions.reduce((total, item, index) => total + (selectedAnswers[index] === item.correctIndex ? 1 : 0), 0) ?? 0;
+
 
   return (
     <main className="lecture-lens-dark min-h-[100dvh] bg-[#f8f7fc] text-[#282641]">
@@ -210,9 +236,6 @@ function Home() {
               <button data-testid="button-generate-notes" onClick={makeNotes} disabled={!ready || notes.isPending} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#6754d9] px-4 text-[13px] font-bold text-white shadow-[0_5px_14px_rgba(103,84,217,.19)] transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">
                 {notes.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />} {notes.isPending ? 'Making your notes…' : 'Generate study notes'} <ArrowRight size={15} />
               </button>
-              <button data-testid="button-generate-quiz" onClick={makeQuiz} disabled={!ready || quiz.isPending} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-[#e5e1f2] bg-white px-4 text-[13px] font-bold text-[#595273] transition hover:border-[#c7bdf1] hover:bg-[#faf9ff] disabled:cursor-not-allowed disabled:opacity-45">
-                {quiz.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <BookOpen size={16} />} {quiz.isPending ? 'Building your quiz…' : 'Make a practice quiz'}
-              </button>
             </div>
             {notes.isError && <div data-testid="status-notes-error" role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-3.5 py-3 text-[12px] text-[#a94e48]"><X size={15} /> {getApiErrorMessage(notes.error, 'Study notes could not be generated. Please try again.')}</div>}
             {quiz.isError && <div data-testid="status-quiz-error" role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-3.5 py-3 text-[12px] text-[#a94e48]"><X size={15} /> {getApiErrorMessage(quiz.error, 'The quiz could not be generated. Please try again.')}</div>}
@@ -254,7 +277,14 @@ function Home() {
 
         <section className="mt-6 grid gap-5 lg:grid-cols-2">
           <div id="practice" className="scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-6">
-            <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><BookOpen size={19} /></div><div><h2 className="font-display text-[19px] font-bold tracking-[-.03em]">Practice what you learned</h2><p className="text-[12px] text-[#908c9f]">Five questions, with explanations to help it stick.</p></div></div>
+            <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><BookOpen size={19} /></div><div><h2 className="font-display text-[19px] font-bold tracking-[-.03em]">Practice what you learned</h2><p className="text-[12px] text-[#908c9f]">Choose a quiz that fits your study session.</p></div></div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <label className="text-[11px] font-bold text-[#5b5672]">Question type<select value={questionType} onChange={(event) => setQuestionType(event.target.value as typeof questionType)} className="mt-1.5 h-10 w-full rounded-lg border border-[#e8e6ef] bg-white px-3 text-[12px]"><option value="mcq">Multiple choice</option><option value="short_answer">Short answer</option><option value="mixed">Mixed</option></select></label>
+              <label className="text-[11px] font-bold text-[#5b5672]">Question count<select value={questionCount} onChange={(event) => setQuestionCount(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-[#e8e6ef] bg-white px-3 text-[12px]"><option value="5">5 questions</option><option value="10">10 questions</option><option value="15">15 questions</option><option value="20">20 questions</option><option value="custom">Custom</option></select></label>
+              {questionCount === 'custom' && <label className="text-[11px] font-bold text-[#5b5672]">Custom count (1–30)<input type="number" min="1" max="30" step="1" value={customQuestionCount} onChange={(event) => setCustomQuestionCount(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-[#e8e6ef] bg-white px-3 text-[12px]" placeholder="Enter a number" /></label>}
+              <label className="text-[11px] font-bold text-[#5b5672]">Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value as typeof difficulty)} className="mt-1.5 h-10 w-full rounded-lg border border-[#e8e6ef] bg-white px-3 text-[12px]"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option><option value="mixed">Mixed</option></select></label>
+            </div>
+            <button type="button" onClick={makeQuiz} disabled={!ready || quiz.isPending || (questionCount === 'custom' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30))} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{quiz.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}{quiz.isPending ? 'Building your quiz…' : 'Make a practice quiz'}</button>
             {!quiz.data && !quiz.isPending && <div className="mt-5 rounded-xl border border-dashed border-[#ded9ed] bg-[#fbfaff] px-4 py-5 text-center"><p className="text-[13px] font-semibold text-[#68637d]">Your practice quiz will live here.</p><p className="mt-1 text-[11px] text-[#9994aa]">Add a transcript above, then choose “Make a practice quiz.”</p></div>}
             {quiz.isPending && <div className="mt-5 space-y-3" aria-label="Building quiz">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-[#f4f2f8]" />)}</div>}
             {quiz.isError && <div role="alert" className="mt-4 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] p-3 text-[12px] text-[#a94e48]">{getApiErrorMessage(quiz.error, 'The quiz could not be generated. Please try again.')}</div>}
@@ -262,10 +292,11 @@ function Home() {
               {quizSubmitted && <div className="mb-5 flex items-center justify-between rounded-xl bg-[#f3f0ff] px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[.12em] text-[#796cc1]">Your score</p><p className="mt-0.5 font-display text-[21px] font-extrabold text-[#453b80]">{score} <span className="text-[13px] font-semibold text-[#827aa7]">/ {quiz.data.questions.length}</span></p></div><button onClick={() => { setSelectedAnswers({}); setQuizSubmitted(false); }} data-testid="button-retry-quiz" className="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#6f5ec7]"><RotateCcw size={14} /> Try again</button></div>}
               <div className="space-y-5">{quiz.data.questions.map((item, index) => {
                 const picked = selectedAnswers[index];
-                const answeredCorrectly = picked === item.correctIndex;
+                const isShortAnswer = item.type === 'short_answer';
+                const answeredCorrectly = isShortAnswer ? evaluations[index]?.isCorrect : picked === item.correctIndex;
                 return <article key={`quiz-${index}`} className="border-b border-[#f0eef5] pb-5 last:border-0 last:pb-0">
                   <p className="text-[13px] font-bold leading-5 text-[#403c56]"><span className="mr-2 font-mono text-[11px] text-[#8d80d3]">{String(index + 1).padStart(2, '0')}</span>{item.question}</p>
-                  <div className="mt-3 space-y-2">{item.options.map((option, optionIndex) => {
+                  {isShortAnswer ? <textarea aria-label={`Answer for question ${index + 1}`} disabled={quizSubmitted} value={String(picked ?? '')} onChange={(event) => setSelectedAnswers((current) => ({ ...current, [index]: event.target.value }))} placeholder="Type your answer…" className="mt-3 min-h-20 w-full rounded-lg border border-[#e8e6ef] bg-[#fcfbfe] p-3 text-[12px] leading-5 disabled:opacity-75" /> : <div className="mt-3 space-y-2">{(item.options ?? []).map((option, optionIndex) => {
                     const isPicked = picked === optionIndex;
                     const isCorrect = optionIndex === item.correctIndex;
                     let optionStyle = 'border-[#eceaf2] bg-white text-[#68647a] hover:border-[#c8c0ed]';
@@ -273,11 +304,12 @@ function Home() {
                     else if (quizSubmitted && isPicked && !isCorrect) optionStyle = 'border-[#f1ceca] bg-[#fff5f4] text-[#a54e49]';
                     else if (isPicked) optionStyle = 'border-[#9a89e5] bg-[#f5f2ff] text-[#55469e]';
                     return <button type="button" key={optionIndex} disabled={quizSubmitted} onClick={() => setSelectedAnswers((current) => ({ ...current, [index]: optionIndex }))} data-testid={`button-quiz-${index}-option-${optionIndex}`} className={`flex w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left text-[12px] leading-5 transition ${optionStyle}`}><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${isPicked ? 'border-[#8875de] bg-[#8875de] text-white' : 'border-[#d9d6e2] bg-white'}`}>{isPicked && <Check size={10} />}</span>{option}{quizSubmitted && isCorrect && <CheckCircle2 size={15} className="ml-auto mt-0.5 shrink-0" />}</button>;
-                  })}</div>
-                  {quizSubmitted && <div className={`mt-2.5 rounded-lg px-3 py-2.5 text-[11px] leading-5 ${answeredCorrectly ? 'bg-[#f2faf6] text-[#4a785f]' : 'bg-[#f6f4fb] text-[#6b6680]'}`}><strong>{answeredCorrectly ? 'That’s right.' : `Correct answer: ${item.options[item.correctIndex]}.`}</strong> {item.explanation}</div>}
+                  })}</div>}
+                  {quizSubmitted && <div className={`mt-2.5 rounded-lg px-3 py-2.5 text-[11px] leading-5 ${answeredCorrectly ? 'bg-[#f2faf6] text-[#4a785f]' : 'bg-[#f6f4fb] text-[#6b6680]'}`}><strong>{answeredCorrectly ? 'That’s right.' : isShortAnswer ? `Expected answer: ${item.expectedAnswer ?? 'See key points below.'}` : `Correct answer: ${item.options?.[item.correctIndex ?? -1] ?? 'Unavailable'}.`}</strong> {isShortAnswer && evaluations[index] ? `${evaluations[index].feedback} ` : null}{item.explanation} {isShortAnswer && item.keyPoints?.length ? <span> Key points: {item.keyPoints.join('; ')}.</span> : null}</div>}
                 </article>;
               })}</div>
-              {!quizSubmitted && <button data-testid="button-submit-quiz" onClick={() => setQuizSubmitted(true)} disabled={Object.keys(selectedAnswers).length !== quiz.data.questions.length} className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45"><CheckCircle2 size={15} /> Check my answers</button>}
+              {evaluationError && <p role="alert" className="mt-3 text-[12px] text-[#a94e48]">{evaluationError}</p>}
+              {!quizSubmitted && <button data-testid="button-submit-quiz" onClick={submitQuiz} disabled={quiz.data.questions.some((item, index) => item.type === 'short_answer' ? !String(selectedAnswers[index] ?? '').trim() : selectedAnswers[index] === undefined) || evaluateAnswer.isPending} className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{evaluateAnswer.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}{evaluateAnswer.isPending ? 'Evaluating answers…' : 'Check my answers'}</button>}
             </div>}
           </div>
 
