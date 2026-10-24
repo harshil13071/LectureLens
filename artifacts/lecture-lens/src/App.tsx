@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -13,6 +13,7 @@ import {
 import { PomodoroTimer } from '@/components/PomodoroTimer';
 import { FlashcardsWorkspace } from '@/components/FlashcardsWorkspace';
 import { MindMapsWorkspace } from '@/components/MindMapsWorkspace';
+import { PersonalStudyLibrary } from '@/components/PersonalStudyLibrary';
 import StudyRooms from '@/pages/study-rooms';
 import { APP_THEME_STORAGE_KEY, parseAppTheme, type AppTheme } from '@/lib/theme';
 import {
@@ -103,6 +104,8 @@ function Home() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [pastedTranscript, setPastedTranscript] = useState('');
   const [uploadedStudyMaterial, setUploadedStudyMaterial] = useState('');
+  const [libraryMaterial, setLibraryMaterial] = useState<{ text: string; title: string } | null>(null);
+  const clearLibraryMaterial = useCallback(() => setLibraryMaterial(null), []);
   const [question, setQuestion] = useState('');
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | string>>({});
@@ -143,7 +146,10 @@ function Home() {
   const transcript = materialMode === 'upload' ? uploadedStudyMaterial : pastedTranscript;
   const ready = transcript.trim().length > 0;
   const lengthLabel = `${transcript.length.toLocaleString()} / 40,000`;
-  const sourceKey = getMaterialKey(materialMode, transcript.trim());
+  const practiceMaterial = libraryMaterial?.text || transcript.trim();
+  const practiceTitle = libraryMaterial?.title || title.trim();
+  const practiceSourceKey = getMaterialKey('paste', practiceMaterial);
+  const practiceReady = practiceMaterial.length > 0;
   const flashcardNotesText = [
     notes.data ? [notes.data.overview, ...notes.data.topics.flatMap((item) => [item.title, ...item.notes]), ...notes.data.keyConcepts.flatMap((item) => [item.term, item.definition]), ...notes.data.takeaways, notes.data.quickRevision].join('\n') : '',
     ...savedResearch.map(formatResearchMarkdown),
@@ -194,6 +200,7 @@ function Home() {
     setYoutubeUrl('');
     setPastedTranscript('');
     setUploadedStudyMaterial('');
+    setLibraryMaterial(null);
     setQuestion('');
     setChatHistory([]);
     setSelectedAnswers({});
@@ -265,8 +272,8 @@ function Home() {
 
   const makeQuiz = (more = false) => {
     const count = questionCount === 'custom' ? Number(customQuestionCount) : Number(questionCount);
-    if (!ready || quiz.isPending || quizRequestInFlightRef.current || quizRetryAfter > 0 || !Number.isInteger(count) || count < 1 || count > 30) return;
-    const priorQuestions = questionHistory[sourceKey] ?? [];
+    if (!practiceReady || quiz.isPending || quizRequestInFlightRef.current || quizRetryAfter > 0 || !Number.isInteger(count) || count < 1 || count > 30) return;
+    const priorQuestions = questionHistory[practiceSourceKey] ?? [];
     if (!more) {
       setSelectedAnswers({});
       setEvaluations({});
@@ -279,12 +286,12 @@ function Home() {
     setQuizRetryAfter(0);
     quizRequestInFlightRef.current = true;
     setGeneratingMore(more);
-    quiz.mutate({ data: { title: title.trim() || undefined, transcript: transcript.trim(), questionType, questionCount: count, difficulty, ...(priorQuestions.length ? { previousQuestions: priorQuestions.slice(-60) } : {}) } }, {
+    quiz.mutate({ data: { title: practiceTitle || undefined, transcript: practiceMaterial, questionType, questionCount: count, difficulty, ...(priorQuestions.length ? { previousQuestions: priorQuestions.slice(-60) } : {}) } }, {
       onSuccess: (result) => {
         quizRequestInFlightRef.current = false;
-        setQuestionHistory((current) => ({ ...current, [sourceKey]: [...new Set([...(current[sourceKey] ?? []), ...result.questions.map((item) => item.question)])] }));
+        setQuestionHistory((current) => ({ ...current, [practiceSourceKey]: [...new Set([...(current[practiceSourceKey] ?? []), ...result.questions.map((item) => item.question)])] }));
         setLastCompletedQuiz(result);
-        setQuizResultSourceKey(sourceKey);
+        setQuizResultSourceKey(practiceSourceKey);
         setSelectedAnswers({});
         setEvaluations({});
         setEvaluationError('');
@@ -309,7 +316,7 @@ function Home() {
       },
     });
   };
-  const displayQuiz = quizResultSourceKey === sourceKey ? (quiz.data ?? (generatingMore ? lastCompletedQuiz : undefined)) : undefined;
+  const displayQuiz = quizResultSourceKey === practiceSourceKey ? (quiz.data ?? (generatingMore ? lastCompletedQuiz : undefined)) : undefined;
   const score = displayQuiz?.questions.reduce((total, item, index) => total + (item.type === 'short_answer' ? (evaluations[index]?.isCorrect ? 1 : 0) : (selectedAnswers[index] === item.correctIndex ? 1 : 0)), 0) ?? 0;
   const submitQuiz = async () => {
     if (!displayQuiz || evaluateAnswer.isPending) return;
@@ -606,8 +613,8 @@ function Home() {
 
         <div className="mt-6">
           <FlashcardsWorkspace
-            workspaceMaterial={transcript}
-            workspaceTitle={title}
+            workspaceMaterial={libraryMaterial?.text || transcript}
+            workspaceTitle={libraryMaterial?.title || title}
             savedNotesText={flashcardNotesText}
             onNavigateWorkspace={() => { window.location.hash = 'workspace'; setActiveSection('workspace'); }}
           />
@@ -615,8 +622,8 @@ function Home() {
 
         <div className="mt-6">
           <MindMapsWorkspace
-            workspaceMaterial={transcript}
-            workspaceTitle={selectedDocument?.name || title}
+            workspaceMaterial={libraryMaterial?.text || transcript}
+            workspaceTitle={libraryMaterial?.title || selectedDocument?.name || title}
             savedNotesText={flashcardNotesText}
             onSaveOutline={(id, mapTitle, outline) => setSavedMindMapNotes((current) => current.some((item) => item.id === id) ? current.map((item) => item.id === id ? { id, title: mapTitle, outline } : item) : [...current, { id, title: mapTitle, outline }])}
             onNavigateWorkspace={() => { window.location.hash = 'workspace'; setActiveSection('workspace'); }}
@@ -659,8 +666,8 @@ function Home() {
               </div>
               {questionCount === 'custom' && customQuestionCount !== '' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30) && <p role="alert" className="mt-2 text-[11px] text-[#a94e48]">Enter a whole number from 1 to 30.</p>}
             </div>
-            <button type="button" data-testid="button-generate-quiz" onClick={() => makeQuiz()} disabled={!ready || quiz.isPending || quizRetryAfter > 0 || (questionCount === 'custom' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30))} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[13px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{quiz.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}{quiz.isPending ? 'Generating quiz…' : quizRetryAfter > 0 ? `Try again in ${quizRetryAfter}s` : 'Generate Quiz'}</button>
-            {!ready && !displayQuiz && <p className="mt-2 text-center text-[11px] text-[#908c9f]">Add a transcript above to enable quiz generation.</p>}
+            <button type="button" data-testid="button-generate-quiz" onClick={() => makeQuiz()} disabled={!practiceReady || quiz.isPending || quizRetryAfter > 0 || (questionCount === 'custom' && (!Number.isInteger(Number(customQuestionCount)) || Number(customQuestionCount) < 1 || Number(customQuestionCount) > 30))} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6754d9] text-[13px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{quiz.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />}{quiz.isPending ? 'Generating quiz…' : quizRetryAfter > 0 ? `Try again in ${quizRetryAfter}s` : 'Generate Quiz'}</button>
+            {!practiceReady && !displayQuiz && <p className="mt-2 text-center text-[11px] text-[#908c9f]">Add a transcript or retrieve passages from your library to enable quiz generation.</p>}
             {!displayQuiz && !quiz.isPending && <div className="mt-4 rounded-xl border border-dashed border-[#ded9ed] bg-white px-4 py-4 text-center"><p className="text-[13px] font-semibold text-[#68637d]">Your practice quiz will appear here.</p></div>}
             {quiz.isPending && <div className="mt-5 space-y-3" aria-label="Building quiz">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-[#f4f2f8]" />)}</div>}
             {quiz.isError && <div role="alert" className="mt-4 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] p-3 text-[12px] text-[#a94e48]">{getApiErrorMessage(quiz.error, 'The quiz could not be generated. Please try again.')}</div>}
@@ -693,6 +700,7 @@ function Home() {
 
           <div id="ask" className="scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-6">
             <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><MessageCircle size={19} /></div><div><h2 className="font-display text-[19px] font-bold tracking-[-.03em]">Ask your AI tutor</h2><p className="text-[12px] text-[#908c9f]">Your AI study companion — ask anything about your lecture or beyond.</p></div></div>
+            <PersonalStudyLibrary workspaceText={transcript.trim() || getNotesText()} workspaceTitle={title.trim() || selectedDocument?.name || 'Current study material'} onUseRetrievedMaterial={(text, materialTitle) => { setLibraryMaterial({ text, title: materialTitle }); window.location.hash = 'practice'; setActiveSection('practice'); }} onSignedOut={clearLibraryMaterial} />
             <form onSubmit={askQuestion} className="mt-5">
               <label htmlFor="lecture-question" className="mb-2 block text-[12px] font-bold text-[#4b4861]">What would you like to understand?</label>
               <textarea id="lecture-question" data-testid="input-lecture-question" value={question} onChange={(event) => setQuestion(event.target.value.slice(0, 2000))} maxLength={2000} placeholder="Ask anything — about a lecture concept, JDK, or another topic…" className="min-h-[105px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-3.5 text-[13px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10" />

@@ -7,14 +7,20 @@ export interface FileExtractionResult {
   textLength: number;
   text: string;
   warning?: string;
+  pages?: Array<{ pageNumber: number; text: string }>;
 }
 
 const MAX_TRANSCRIPT_CHARS = 40_000;
+export interface FileExtractionOptions {
+  maxChars?: number;
+  includePages?: boolean;
+}
 
 export async function extractTextFromFile(
   originalName: string,
   _mimetype: string,
   buffer: Buffer,
+  options: FileExtractionOptions = {},
 ): Promise<FileExtractionResult> {
   const ext = path.extname(originalName).toLowerCase();
   const safeFilename = path.basename(originalName).slice(0, 120) || "uploaded-document";
@@ -24,6 +30,7 @@ export async function extractTextFromFile(
   }
 
   let extractedRaw = "";
+  let extractedPages: Array<{ pageNumber: number; text: string }> | undefined;
   let resolvedType = "text/plain";
 
   if (ext === ".txt") {
@@ -47,8 +54,13 @@ export async function extractTextFromFile(
       // failures from preventing the API server from starting.
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: buffer });
-      const parsed = await parser.getText();
-      extractedRaw = parsed.text || "";
+      try {
+        const parsed = await parser.getText();
+        extractedRaw = parsed.text || "";
+        if (options.includePages) extractedPages = parsed.pages.map((page) => ({ pageNumber: page.num, text: page.text }));
+      } finally {
+        await parser.destroy();
+      }
     } catch (pdfErr) {
       const msg = pdfErr instanceof Error ? pdfErr.message : "Malformed PDF";
       throw new Error(`Could not parse PDF file (${msg}). Please verify the file is not damaged or password-protected.`);
@@ -95,9 +107,22 @@ export async function extractTextFromFile(
   }
 
   let warning: string | undefined;
-  if (cleanedText.length > MAX_TRANSCRIPT_CHARS) {
-    cleanedText = cleanedText.slice(0, MAX_TRANSCRIPT_CHARS);
-    warning = `The document exceeds the limit and was trimmed to the first ${MAX_TRANSCRIPT_CHARS.toLocaleString()} characters for optimal study material generation.`;
+  const maxChars = Math.max(1, options.maxChars ?? MAX_TRANSCRIPT_CHARS);
+  if (cleanedText.length > maxChars) {
+    cleanedText = cleanedText.slice(0, maxChars);
+    warning = `The document exceeds the limit and was trimmed to the first ${maxChars.toLocaleString()} characters for processing.`;
+  }
+
+  let pages: Array<{ pageNumber: number; text: string }> | undefined;
+  if (options.includePages && extractedPages) {
+    let remaining = maxChars;
+    pages = [];
+    for (const page of extractedPages) {
+      if (remaining <= 0) break;
+      const text = page.text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\0/g, "").trim().slice(0, remaining);
+      if (text) pages.push({ pageNumber: page.pageNumber, text });
+      remaining -= text.length;
+    }
   }
 
   return {
@@ -106,5 +131,6 @@ export async function extractTextFromFile(
     textLength: cleanedText.length,
     text: cleanedText,
     warning,
+    ...(pages ? { pages } : {}),
   };
 }

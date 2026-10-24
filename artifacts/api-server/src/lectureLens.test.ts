@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import app from "./app";
+import "./rag.test";
+import { extractTextFromFile } from "./lib/fileExtractor";
 import {
   sanitizeProviderMessage,
   extractJsonObject,
@@ -325,6 +327,10 @@ test("API Endpoints validation and behavior with mock provider", async (t) => {
     const pdfResult = await pdfRes.json() as { fileType: string; text: string };
     assert.equal(pdfResult.fileType, "PDF Document");
     assert.ok(pdfResult.text.includes(pdfText));
+
+    const detailedPdf = await extractTextFromFile("lecture.pdf", "application/pdf", createMinimalPdf(pdfText), { includePages: true, maxChars: 2_000 });
+    assert.equal(detailedPdf.pages?.[0]?.pageNumber, 1);
+    assert.ok(detailedPdf.pages?.[0]?.text.includes(pdfText));
 
     const docxText = "DOCX extraction confirms readable lecture material.";
     const docxBuffer = createStoredZip([
