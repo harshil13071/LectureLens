@@ -119,6 +119,107 @@ export interface FlashcardDeck {
   cards: FlashcardItem[];
 }
 
+export type MindMapInputComplexity = typeof MindMapInputComplexity[keyof typeof MindMapInputComplexity];
+
+
+export const MindMapInputComplexity = {
+  simple: 'simple',
+  balanced: 'balanced',
+  detailed: 'detailed',
+} as const;
+
+export interface MindMapInput {
+  /** @maxLength 160 */
+  title?: string;
+  /**
+     * @minLength 1
+     * @maxLength 40000
+     */
+  sourceText?: string;
+  /**
+     * @minLength 2
+     * @maxLength 160
+     */
+  topic?: string;
+  complexity?: MindMapInputComplexity;
+  /**
+     * @minimum 1
+     * @maximum 4
+     */
+  depth?: number;
+}
+
+export interface MindMapNode {
+  /**
+     * @minLength 1
+     * @maxLength 48
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  label: string;
+  /** @maxLength 320 */
+  explanation: string;
+  /**
+     * @minimum 0
+     * @maximum 4
+     */
+  level: number;
+  /** @maxLength 48 */
+  parentId?: string;
+}
+
+export type MindMapEdgeKind = typeof MindMapEdgeKind[keyof typeof MindMapEdgeKind];
+
+
+export const MindMapEdgeKind = {
+  branch: 'branch',
+  related: 'related',
+} as const;
+
+export interface MindMapEdge {
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 48
+     */
+  source: string;
+  /**
+     * @minLength 1
+     * @maxLength 48
+     */
+  target: string;
+  /** @maxLength 80 */
+  label?: string;
+  kind: MindMapEdgeKind;
+}
+
+export interface MindMapGraph {
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  title: string;
+  /**
+     * @minLength 1
+     * @maxLength 48
+     */
+  centralNodeId: string;
+  /**
+     * @minItems 3
+     * @maxItems 60
+     */
+  nodes: MindMapNode[];
+  /** @maxItems 100 */
+  edges: MindMapEdge[];
+}
+
 export interface EvaluateAnswerInput {
   question: string;
   studentAnswer: string;

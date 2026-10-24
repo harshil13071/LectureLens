@@ -143,6 +143,80 @@ export const GenerateFlashcardsResponse = zod.object({
 
 
 /**
+ * @summary Generate a mind map from study material or a topic
+ */
+export const generateMindMapBodyTitleMax = 160;
+
+export const generateMindMapBodySourceTextMax = 40000;
+
+export const generateMindMapBodyTopicMin = 2;
+export const generateMindMapBodyTopicMax = 160;
+
+export const generateMindMapBodyComplexityDefault = `balanced`;
+export const generateMindMapBodyDepthDefault = 3;
+export const generateMindMapBodyDepthMax = 4;
+
+
+
+export const GenerateMindMapBody = zod.object({
+  "title": zod.string().max(generateMindMapBodyTitleMax).optional(),
+  "sourceText": zod.string().min(1).max(generateMindMapBodySourceTextMax).optional(),
+  "topic": zod.string().min(generateMindMapBodyTopicMin).max(generateMindMapBodyTopicMax).optional(),
+  "complexity": zod.enum(['simple', 'balanced', 'detailed']).default(generateMindMapBodyComplexityDefault),
+  "depth": zod.number().int().min(1).max(generateMindMapBodyDepthMax).default(generateMindMapBodyDepthDefault)
+})
+
+export const generateMindMapResponseTitleMax = 160;
+
+export const generateMindMapResponseCentralNodeIdMax = 48;
+
+export const generateMindMapResponseNodesItemIdMax = 48;
+
+export const generateMindMapResponseNodesItemLabelMax = 80;
+
+export const generateMindMapResponseNodesItemExplanationMax = 320;
+
+export const generateMindMapResponseNodesItemLevelMin = 0;
+export const generateMindMapResponseNodesItemLevelMax = 4;
+
+export const generateMindMapResponseNodesItemParentIdMax = 48;
+
+export const generateMindMapResponseNodesMin = 3;
+export const generateMindMapResponseNodesMax = 60;
+
+export const generateMindMapResponseEdgesItemIdMax = 64;
+
+export const generateMindMapResponseEdgesItemSourceMax = 48;
+
+export const generateMindMapResponseEdgesItemTargetMax = 48;
+
+export const generateMindMapResponseEdgesItemLabelMax = 80;
+
+export const generateMindMapResponseEdgesMax = 100;
+
+
+
+export const GenerateMindMapResponse = zod.object({
+  "title": zod.string().min(1).max(generateMindMapResponseTitleMax),
+  "centralNodeId": zod.string().min(1).max(generateMindMapResponseCentralNodeIdMax),
+  "nodes": zod.array(zod.object({
+  "id": zod.string().min(1).max(generateMindMapResponseNodesItemIdMax),
+  "label": zod.string().min(1).max(generateMindMapResponseNodesItemLabelMax),
+  "explanation": zod.string().max(generateMindMapResponseNodesItemExplanationMax),
+  "level": zod.number().int().min(generateMindMapResponseNodesItemLevelMin).max(generateMindMapResponseNodesItemLevelMax),
+  "parentId": zod.string().max(generateMindMapResponseNodesItemParentIdMax).optional()
+})).min(generateMindMapResponseNodesMin).max(generateMindMapResponseNodesMax),
+  "edges": zod.array(zod.object({
+  "id": zod.string().min(1).max(generateMindMapResponseEdgesItemIdMax),
+  "source": zod.string().min(1).max(generateMindMapResponseEdgesItemSourceMax),
+  "target": zod.string().min(1).max(generateMindMapResponseEdgesItemTargetMax),
+  "label": zod.string().max(generateMindMapResponseEdgesItemLabelMax).optional(),
+  "kind": zod.enum(['branch', 'related'])
+})).max(generateMindMapResponseEdgesMax)
+})
+
+
+/**
  * @summary Evaluate a student short answer against the expected answer and rubric
  */
 export const EvaluateShortAnswerBody = zod.object({

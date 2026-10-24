@@ -8,10 +8,11 @@ import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShort
 import {
   ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard, Clock3,
   ExternalLink, FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw, Search,
-  FileUp, Layers3, Menu, Moon, Sparkles, Sun, Trash2, Upload, X, Youtube,
+  FileUp, GitBranch, Layers3, Menu, Moon, Sparkles, Sun, Trash2, Upload, X, Youtube,
 } from 'lucide-react';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
 import { FlashcardsWorkspace } from '@/components/FlashcardsWorkspace';
+import { MindMapsWorkspace } from '@/components/MindMapsWorkspace';
 import { APP_THEME_STORAGE_KEY, parseAppTheme, type AppTheme } from '@/lib/theme';
 import {
   Route,
@@ -27,7 +28,7 @@ type ChatMessage = {
   foundInTranscript?: boolean;
 };
 
-type NavigationSection = 'workspace' | 'notes' | 'flashcards' | 'practice' | 'ask' | 'research' | 'timer';
+type NavigationSection = 'workspace' | 'notes' | 'flashcards' | 'mindmaps' | 'practice' | 'ask' | 'research' | 'timer';
 
 function readSavedTheme(): AppTheme {
   if (typeof window === 'undefined') return 'dark';
@@ -40,8 +41,9 @@ function readSavedTheme(): AppTheme {
 
 function sectionForTarget(targetId: string): NavigationSection {
   if (targetId === 'notes-preview' || targetId === 'notes-output') return 'notes';
-  return ['workspace', 'flashcards', 'practice', 'ask', 'research', 'timer'].includes(targetId)
-    ? targetId as NavigationSection
+  const navigationTarget = targetId === 'mind-maps' ? 'mindmaps' : targetId;
+  return ['workspace', 'flashcards', 'mindmaps', 'practice', 'ask', 'research', 'timer'].includes(navigationTarget)
+    ? navigationTarget as NavigationSection
     : 'workspace';
 }
 
@@ -119,6 +121,7 @@ function Home() {
   const [researchQuery, setResearchQuery] = useState('');
   const [researchMode, setResearchMode] = useState<'overview' | 'detailed' | 'exam_prep' | 'comparison'>('overview');
   const [savedResearch, setSavedResearch] = useState<ResearchResult[]>([]);
+  const [savedMindMapNotes, setSavedMindMapNotes] = useState<Array<{ id: string; title: string; outline: string }>>([]);
   const [researchCopied, setResearchCopied] = useState(false);
   const [researchRetryAfter, setResearchRetryAfter] = useState(0);
   const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
@@ -143,6 +146,7 @@ function Home() {
   const flashcardNotesText = [
     notes.data ? [notes.data.overview, ...notes.data.topics.flatMap((item) => [item.title, ...item.notes]), ...notes.data.keyConcepts.flatMap((item) => [item.term, item.definition]), ...notes.data.takeaways, notes.data.quickRevision].join('\n') : '',
     ...savedResearch.map(formatResearchMarkdown),
+    ...savedMindMapNotes.map((item) => item.outline),
   ].filter(Boolean).join('\n\n').slice(0, 40000);
 
   useEffect(() => {
@@ -160,7 +164,7 @@ function Home() {
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return;
-    const ids = ['workspace', 'notes-preview', 'notes-output', 'flashcards', 'practice', 'ask', 'research', 'timer'];
+    const ids = ['workspace', 'notes-preview', 'notes-output', 'flashcards', 'mind-maps', 'practice', 'ask', 'research', 'timer'];
     const targets = ids.map((id) => document.getElementById(id)).filter((element): element is HTMLElement => element !== null);
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting)
@@ -169,13 +173,14 @@ function Home() {
     }, { rootMargin: '-82px 0px -65% 0px', threshold: 0 });
     targets.forEach((target) => observer.observe(target));
     return () => observer.disconnect();
-  }, [Boolean(notes.data), savedResearch.length]);
+  }, [Boolean(notes.data), savedResearch.length, savedMindMapNotes.length]);
 
-  const notesHref = notes.data || notes.isPending || savedResearch.length ? '#notes-output' : '#notes-preview';
+  const notesHref = notes.data || notes.isPending || savedResearch.length || savedMindMapNotes.length ? '#notes-output' : '#notes-preview';
   const navigationItems: Array<{ id: NavigationSection; label: string; href: string; icon: ReactNode }> = [
     { id: 'workspace', label: 'Workspace', href: '#workspace', icon: <GraduationCap size={17} /> },
     { id: 'notes', label: 'Notes', href: notesHref, icon: <FileText size={17} /> },
     { id: 'flashcards', label: 'Flashcards', href: '#flashcards', icon: <Layers3 size={17} /> },
+    { id: 'mindmaps', label: 'Mind Maps', href: '#mind-maps', icon: <GitBranch size={17} /> },
     { id: 'practice', label: 'Practice', href: '#practice', icon: <BookOpen size={17} /> },
     { id: 'ask', label: 'Ask Tutor', href: '#ask', icon: <MessageCircle size={17} /> },
     { id: 'research', label: 'Research', href: '#research', icon: <Search size={17} /> },
@@ -208,6 +213,7 @@ function Home() {
     setResearchRetryAfter(0);
     setResearchQuery('');
     setSavedResearch([]);
+    setSavedMindMapNotes([]);
   };
 
   const handleDocumentFile = (file?: File) => {
@@ -354,7 +360,7 @@ function Home() {
       '\nTAKEAWAYS', ...result.takeaways.map((takeaway) => `• ${takeaway}`),
       '\nQUICK REVISION', result.quickRevision,
     ].join('\n') : '';
-    return [generatedNotes, ...savedResearch.map(formatResearchMarkdown)].filter(Boolean).join('\n\n---\n\n');
+    return [generatedNotes, ...savedResearch.map(formatResearchMarkdown), ...savedMindMapNotes.map((item) => item.outline)].filter(Boolean).join('\n\n---\n\n');
   };
   const copyNotes = async () => {
     try {
@@ -545,6 +551,7 @@ function Home() {
               <button data-testid="button-generate-notes" onClick={makeNotes} disabled={!ready || notes.isPending} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#6754d9] px-4 text-[13px] font-bold text-white shadow-[0_5px_14px_rgba(103,84,217,.19)] transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">
                 {notes.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />} {notes.isPending ? 'Making your notes…' : 'Generate study notes'} <ArrowRight size={15} />
               </button>
+              <button type="button" onClick={() => { window.location.hash = 'mind-maps'; setActiveSection('mindmaps'); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#ded8f2] bg-[#f8f6ff] px-4 text-[12px] font-bold text-[#6655c6] transition hover:bg-[#f0edff]"><GitBranch size={15} />Make a mind map</button>
             </div>
             {notes.isError && <div data-testid="status-notes-error" role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-3.5 py-3 text-[12px] text-[#a94e48]"><X size={15} /> {getApiErrorMessage(notes.error, 'Study notes could not be generated. Please try again.')}</div>}
           </div>
@@ -569,10 +576,10 @@ function Home() {
           </aside>
         </section>
 
-        {(notes.data || notes.isPending || savedResearch.length > 0) && <section id="notes-output" className="mt-6 scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-7">
+        {(notes.data || notes.isPending || savedResearch.length > 0 || savedMindMapNotes.length > 0) && <section id="notes-output" className="mt-6 scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-7">
           <div className="flex flex-col gap-4 border-b border-[#efedf4] pb-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><FileText size={19} /></div><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-display text-[20px] font-bold tracking-[-.03em]">{title || 'Your study notes'}</h2>{notes.data && <span className="rounded-full bg-[#eeebff] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[.1em] text-[#725fcf]">Generated from transcript</span>}</div><p className="mt-0.5 text-[12px] text-[#908c9f]">A structured guide with any research you chose to save.</p></div></div>
-            {(notes.data || savedResearch.length > 0) && <div className="flex gap-2"><button onClick={copyNotes} data-testid="button-copy-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]">{copied ? <Check size={14} /> : <Clipboard size={14} />}{copied ? 'Copied' : 'Copy'}</button><button onClick={downloadNotes} data-testid="button-download-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]"><ArrowDownToLine size={14} /> Download</button></div>}
+            {(notes.data || savedResearch.length > 0 || savedMindMapNotes.length > 0) && <div className="flex gap-2"><button onClick={copyNotes} data-testid="button-copy-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]">{copied ? <Check size={14} /> : <Clipboard size={14} />}{copied ? 'Copied' : 'Copy'}</button><button onClick={downloadNotes} data-testid="button-download-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]"><ArrowDownToLine size={14} /> Download</button></div>}
           </div>
           {notes.isPending ? <div className="grid gap-4 pt-6 sm:grid-cols-2"><div className="space-y-3"><div className="h-4 w-24 animate-pulse rounded bg-[#efedf5]" /><div className="h-3 w-full animate-pulse rounded bg-[#f3f1f7]" /><div className="h-3 w-5/6 animate-pulse rounded bg-[#f3f1f7]" /></div><div className="space-y-3"><div className="h-4 w-32 animate-pulse rounded bg-[#efedf5]" /><div className="h-3 w-full animate-pulse rounded bg-[#f3f1f7]" /><div className="h-3 w-4/6 animate-pulse rounded bg-[#f3f1f7]" /></div></div> : notes.data && <div className="grid gap-x-12 gap-y-7 pt-6 md:grid-cols-2">
             <article className="md:col-span-2"><h3 className="mb-2 text-[11px] font-bold uppercase tracking-[.14em] text-[#8176bb]">Overview</h3><p className="max-w-4xl text-[14px] leading-7 text-[#59566f]">{notes.data.overview}</p></article>
@@ -589,6 +596,10 @@ function Home() {
               <ul className="mt-3 space-y-1.5">{item.sources.map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6754d9] hover:underline">{source.title}<ExternalLink size={11} /></a></li>)}</ul>
             </article>)}
           </div>}
+          {!notes.isPending && savedMindMapNotes.length > 0 && <div className="mt-6 space-y-5 border-t border-[#efedf4] pt-5">
+            <h3 className="text-[11px] font-bold uppercase tracking-[.14em] text-[#7565c7]">Saved mind map outlines</h3>
+            {savedMindMapNotes.map((item) => <article key={item.id} className="rounded-xl bg-[#faf9fe] p-4"><h4 className="font-display text-[16px] font-bold text-[#45415b]">{item.title}</h4><pre className="mt-2 whitespace-pre-wrap font-sans text-[12px] leading-6 text-[#666279]">{item.outline}</pre></article>)}
+          </div>}
         </section>}
 
         <div className="mt-6">
@@ -596,6 +607,16 @@ function Home() {
             workspaceMaterial={transcript}
             workspaceTitle={title}
             savedNotesText={flashcardNotesText}
+            onNavigateWorkspace={() => { window.location.hash = 'workspace'; setActiveSection('workspace'); }}
+          />
+        </div>
+
+        <div className="mt-6">
+          <MindMapsWorkspace
+            workspaceMaterial={transcript}
+            workspaceTitle={selectedDocument?.name || title}
+            savedNotesText={flashcardNotesText}
+            onSaveOutline={(id, mapTitle, outline) => setSavedMindMapNotes((current) => current.some((item) => item.id === id) ? current.map((item) => item.id === id ? { id, title: mapTitle, outline } : item) : [...current, { id, title: mapTitle, outline }])}
             onNavigateWorkspace={() => { window.location.hash = 'workspace'; setActiveSection('workspace'); }}
           />
         </div>

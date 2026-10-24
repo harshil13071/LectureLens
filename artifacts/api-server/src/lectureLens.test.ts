@@ -771,6 +771,68 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
     assert.match(duplicateBody.error, /duplicate questions/);
   });
 
+  await t.test("Mind map generation validates hierarchy and grounds requested complexity and depth", async () => {
+    mockCallCount = 0;
+    const missingSource = await fetch(baseUrl + "/mind-maps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ complexity: "simple", depth: 2 }),
+    });
+    assert.equal(missingSource.status, 400);
+    assert.equal(mockCallCount, 0);
+
+    returnStatus = 200;
+    returnPayload = { choices: [{ message: { content: JSON.stringify({
+      title: "Virtual Memory",
+      centralNodeId: "virtual-memory",
+      nodes: [
+        { id: "virtual-memory", label: "Virtual memory", explanation: "Memory abstraction.", level: 0 },
+        { id: "paging", label: "Paging", explanation: "Divides memory into pages.", level: 1, parentId: "virtual-memory" },
+        { id: "page-fault", label: "Page faults", explanation: "Raised when a page is not resident.", level: 2, parentId: "paging" },
+        { id: "page-table", label: "Page table", explanation: "Maps virtual pages to frames.", level: 1, parentId: "virtual-memory" },
+      ],
+      edges: [
+        { id: "e1", source: "virtual-memory", target: "paging", label: "uses", kind: "branch" },
+        { id: "e2", source: "paging", target: "page-fault", label: "may trigger", kind: "branch" },
+        { id: "e3", source: "virtual-memory", target: "page-table", label: "maps through", kind: "branch" },
+        { id: "e4", source: "page-fault", target: "page-table", label: "resolved using", kind: "related" },
+      ],
+    }) } }] };
+    const generated = await fetch(baseUrl + "/mind-maps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Virtual Memory", sourceText: REALISTIC_LECTURE_TRANSCRIPT, complexity: "balanced", depth: 2 }),
+    });
+    assert.equal(generated.status, 200);
+    const body = await generated.json() as { nodes: Array<{ id: string }>; edges: Array<{ kind: string }> };
+    assert.equal(body.nodes.length, 4);
+    assert.ok(body.edges.some((edge) => edge.kind === "related"));
+    const messages = lastRequestBody?.messages as Array<{ role: string; content: string }>;
+    assert.ok(messages[0].content.includes("depth 2"));
+    assert.ok(messages[0].content.includes("balanced complexity"));
+    assert.ok(messages[1].content.includes(REALISTIC_LECTURE_TRANSCRIPT.trim()));
+
+    returnPayload = { choices: [{ message: { content: JSON.stringify({
+      title: "Virtual Memory",
+      centralNodeId: "root",
+      nodes: [
+        { id: "root", label: "Virtual memory", explanation: "", level: 0 },
+        { id: "a", label: "Paging", explanation: "", level: 1, parentId: "root" },
+        { id: "b", label: "Paging", explanation: "", level: 1, parentId: "root" },
+      ],
+      edges: [
+        { id: "a-edge", source: "root", target: "a", kind: "branch" },
+        { id: "b-edge", source: "root", target: "b", kind: "branch" },
+      ],
+    }) } }] };
+    const invalidGraph = await fetch(baseUrl + "/mind-maps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: "Virtual memory", complexity: "simple", depth: 1 }),
+    });
+    assert.equal(invalidGraph.status, 502);
+  });
+
   // 4. Test Ask with conversation history and context
   await t.test("Ask tutor with conversation history", async () => {
     mockCallCount = 0;

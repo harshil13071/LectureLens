@@ -171,6 +171,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /mind-maps:
+    post:
+      operationId: generateMindMap
+      tags: [lecture-lens]
+      summary: Generate a mind map from study material or a topic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MindMapInput"
+      responses:
+        "200":
+          description: Generated concept map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MindMapGraph"
+        "400":
+          description: Invalid study material or map settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: AI provider rate limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: AI provider request failed or returned invalid map data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: AI provider is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "504":
+          description: AI provider request timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /quiz/evaluate-answer:
     post:
       operationId: evaluateShortAnswer
@@ -448,6 +496,96 @@ components:
       required:
         - title
         - cards
+    MindMapInput:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        sourceText:
+          type: string
+          minLength: 1
+          maxLength: 40000
+        topic:
+          type: string
+          minLength: 2
+          maxLength: 160
+        complexity:
+          type: string
+          enum: [simple, balanced, detailed]
+          default: balanced
+        depth:
+          type: integer
+          minimum: 1
+          maximum: 4
+          default: 3
+    MindMapNode:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 48
+        label:
+          type: string
+          minLength: 1
+          maxLength: 80
+        explanation:
+          type: string
+          maxLength: 320
+        level:
+          type: integer
+          minimum: 0
+          maximum: 4
+        parentId:
+          type: string
+          maxLength: 48
+      required: [id, label, explanation, level]
+    MindMapEdge:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        source:
+          type: string
+          minLength: 1
+          maxLength: 48
+        target:
+          type: string
+          minLength: 1
+          maxLength: 48
+        label:
+          type: string
+          maxLength: 80
+        kind:
+          type: string
+          enum: [branch, related]
+      required: [id, source, target, kind]
+    MindMapGraph:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        centralNodeId:
+          type: string
+          minLength: 1
+          maxLength: 48
+        nodes:
+          type: array
+          minItems: 3
+          maxItems: 60
+          items:
+            $ref: "#/components/schemas/MindMapNode"
+        edges:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/MindMapEdge"
+      required: [title, centralNodeId, nodes, edges]
     EvaluateAnswerInput:
       type: object
       properties:
