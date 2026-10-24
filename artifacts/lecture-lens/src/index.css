@@ -356,6 +356,50 @@
 :root {
   color-scheme: dark;
 }
+html.dark {
+  --app-bg: #0d0c12;
+  --app-surface: #181720;
+  --app-surface-raised: #211d33;
+  --app-surface-inset: #121118;
+  --app-border: #302e3c;
+  --app-text: #f0eef8;
+  --app-text-muted: #aaa6b7;
+  --app-accent: #a99aff;
+  --app-accent-strong: #705de0;
+  --app-accent-soft: #211d33;
+  --app-accent-text: #c4baff;
+  --app-success: #8ddbb2;
+  --app-success-surface: #172a23;
+  --app-danger: #ffaaa4;
+  --app-danger-surface: #301d20;
+  --app-warning: #e6c987;
+  --app-shadow: 0 18px 54px rgb(0 0 0 / .24);
+}
+html.light {
+  color-scheme: light;
+  --background: 252 42% 98%; --foreground: 245 26% 17%; --border: 245 24% 90%;
+  --card: 0 0% 100%; --card-foreground: 245 26% 17%; --card-border: 245 24% 91%;
+  --popover: 0 0% 100%; --popover-foreground: 245 26% 17%; --popover-border: 245 24% 90%;
+  --primary: 250 76% 54%; --primary-foreground: 0 0% 100%; --ring: 250 76% 54%;
+  --input: 245 24% 88%; --muted: 250 24% 95%; --muted-foreground: 247 13% 42%;
+  --app-bg: #f8f7fc;
+  --app-surface: #ffffff;
+  --app-surface-raised: #faf9fe;
+  --app-surface-inset: #f5f3fa;
+  --app-border: #e5e2ed;
+  --app-text: #282641;
+  --app-text-muted: #68647a;
+  --app-accent: #6754d9;
+  --app-accent-strong: #5f4acb;
+  --app-accent-soft: #f2efff;
+  --app-accent-text: #55469e;
+  --app-success: #327854;
+  --app-success-surface: #f1fbf6;
+  --app-danger: #a54e49;
+  --app-danger-surface: #fff5f4;
+  --app-warning: #806b3b;
+  --app-shadow: 0 14px 40px rgb(52 45 88 / .08), 0 2px 5px rgb(52 45 88 / .04);
+}
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 button, input, textarea { font: inherit; }
@@ -366,80 +410,113 @@ button, input, textarea { font: inherit; }
 .pomodoro-progress { transition: stroke-dashoffset 300ms linear; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
-/* The app uses some carefully chosen inline Tailwind colors; keep that design
-   but remap its light surfaces and text for the dark-first workspace. */
-main.lecture-lens-dark {
+/* The main UI retains its existing component palette, mapped through shared
+   tokens in dark mode. Light mode uses the original light utility colours. */
+main.lecture-lens-app {
+  color-scheme: light;
+  background: var(--app-bg);
+  color: var(--app-text);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+main.lecture-lens-app[data-theme="dark"] {
   color-scheme: dark;
-  background: #0d0c12 !important;
-  color: #f0eef8 !important;
 }
-main.lecture-lens-dark [class*="bg-white"],
-main.lecture-lens-dark [class*="bg-[#f"],
-main.lecture-lens-dark [class*="bg-[#e"] {
-  background-color: #181720 !important;
+main.lecture-lens-app[data-theme="dark"] [class*="bg-white"],
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#f"],
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#e"] {
+  background-color: var(--app-surface) !important;
 }
-main.lecture-lens-dark [class*="bg-[#f2efff"],
-main.lecture-lens-dark [class*="bg-[#f0edff"],
-main.lecture-lens-dark [class*="bg-[#eeebff"],
-main.lecture-lens-dark [class*="bg-[#f5f2ff"],
-main.lecture-lens-dark [class*="bg-[#f3f0ff"] {
-  background-color: #211d33 !important;
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#f2efff"],
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#f0edff"],
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#eeebff"],
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#f5f2ff"],
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#f3f0ff"] {
+  background-color: var(--app-surface-raised) !important;
 }
-main.lecture-lens-dark [class*="bg-[#fff8f7"] {
-  background-color: #301d20 !important;
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#fff8f7"] {
+  background-color: var(--app-danger-surface) !important;
 }
-main.lecture-lens-dark [class*="bg-[#f1fbf6"],
-main.lecture-lens-dark [class*="bg-[#f2faf6"] {
-  background-color: #172a23 !important;
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#f1fbf6"],
+main.lecture-lens-app[data-theme="dark"] [class*="bg-[#f2faf6"] {
+  background-color: var(--app-success-surface) !important;
 }
-main.lecture-lens-dark [class*="border-[#e"],
-main.lecture-lens-dark [class*="border-[#f"],
-main.lecture-lens-dark [class*="border-[#d"],
-main.lecture-lens-dark [class*="border-white"] {
-  border-color: #302e3c !important;
+main.lecture-lens-app[data-theme="dark"] [class*="border-[#e"],
+main.lecture-lens-app[data-theme="dark"] [class*="border-[#f"],
+main.lecture-lens-app[data-theme="dark"] [class*="border-[#d"],
+main.lecture-lens-app[data-theme="dark"] [class*="border-white"] {
+  border-color: var(--app-border) !important;
 }
-main.lecture-lens-dark [class*="text-[#"] {
-  color: #c4c1d0 !important;
+main.lecture-lens-app[data-theme="dark"] [class*="text-[#"] {
+  color: var(--app-text-muted) !important;
 }
-main.lecture-lens-dark [class*="text-[#6"],
-main.lecture-lens-dark [class*="text-[#7"] {
-  color: #b3a6ff !important;
+main.lecture-lens-app[data-theme="dark"] [class*="text-[#6"],
+main.lecture-lens-app[data-theme="dark"] [class*="text-[#7"] {
+  color: var(--app-accent-text) !important;
 }
-main.lecture-lens-dark [class*="text-[#a94"],
-main.lecture-lens-dark [class*="text-[#a54"] {
-  color: #ffaaa4 !important;
+main.lecture-lens-app[data-theme="dark"] [class*="text-[#a94"],
+main.lecture-lens-app[data-theme="dark"] [class*="text-[#a54"] {
+  color: var(--app-danger) !important;
 }
-main.lecture-lens-dark [class*="text-[#327"],
-main.lecture-lens-dark [class*="text-[#4a7"] {
-  color: #8ddbb2 !important;
+main.lecture-lens-app[data-theme="dark"] [class*="text-[#327"],
+main.lecture-lens-app[data-theme="dark"] [class*="text-[#4a7"] {
+  color: var(--app-success) !important;
 }
-main.lecture-lens-dark [class*="placeholder:text-[#"]::placeholder {
+main.lecture-lens-app[data-theme="dark"] [class*="placeholder:text-[#"]::placeholder {
   color: #858194 !important;
 }
-main.lecture-lens-dark header {
-  background-color: rgb(16 15 22 / 88%) !important;
-  border-color: #282633 !important;
+main.lecture-lens-app .app-header {
+  background-color: color-mix(in srgb, var(--app-bg) 90%, transparent);
+  border-color: var(--app-border);
 }
-main.lecture-lens-dark input,
-main.lecture-lens-dark textarea {
-  color: #eeecf6 !important;
+main.lecture-lens-app[data-theme="dark"] input:not([type="checkbox"]),
+main.lecture-lens-app[data-theme="dark"] textarea,
+main.lecture-lens-app[data-theme="dark"] select {
+  color: #eeecf6;
 }
-main.lecture-lens-dark input:focus,
-main.lecture-lens-dark textarea:focus {
-  border-color: #7663df !important;
+main.lecture-lens-app[data-theme="light"] input:not([type="checkbox"]),
+main.lecture-lens-app[data-theme="light"] textarea,
+main.lecture-lens-app[data-theme="light"] select {
+  color: var(--app-text);
 }
-main.lecture-lens-dark a,
-main.lecture-lens-dark button {
-  transition-duration: 160ms;
-}
-main.lecture-lens-dark button:focus-visible,
-main.lecture-lens-dark a:focus-visible,
-main.lecture-lens-dark input:focus-visible,
-main.lecture-lens-dark textarea:focus-visible {
-  outline: 2px solid #9585ff;
+main.lecture-lens-app button:focus-visible,
+main.lecture-lens-app a:focus-visible,
+main.lecture-lens-app input:focus-visible,
+main.lecture-lens-app textarea:focus-visible,
+main.lecture-lens-app select:focus-visible {
+  outline: 2px solid var(--app-accent);
   outline-offset: 2px;
 }
-main.lecture-lens-dark .material-source-button {
+main.lecture-lens-app .app-theme-toggle {
+  border-color: var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text-muted);
+}
+main.lecture-lens-app .app-theme-toggle:hover {
+  background: var(--app-surface-raised);
+  color: var(--app-text);
+}
+main.lecture-lens-app .app-navigation {
+  background: var(--app-surface-inset);
+}
+main.lecture-lens-app .app-nav-link {
+  color: var(--app-text-muted);
+  text-decoration: none;
+}
+main.lecture-lens-app .app-nav-link:hover {
+  color: var(--app-text);
+  background: var(--app-surface-raised);
+}
+main.lecture-lens-app .app-nav-link.is-active {
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  box-shadow: 0 1px 3px rgb(12 10 22 / .12);
+}
+main.lecture-lens-app .app-mobile-navigation {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+  box-shadow: var(--app-shadow);
+}
+main.lecture-lens-app .material-source-button {
   min-height: 40px;
   padding: 0.625rem 1rem !important;
   border: 1px solid #39364a !important;
@@ -449,19 +526,101 @@ main.lecture-lens-dark .material-source-button {
   font-weight: 700;
   cursor: pointer;
 }
-main.lecture-lens-dark .material-source-button:hover {
+main.lecture-lens-app[data-theme="dark"] .material-source-button:hover {
   background-color: #242132 !important;
   color: #f0eef8 !important;
 }
-main.lecture-lens-dark .material-source-button[aria-selected="true"] {
+main.lecture-lens-app[data-theme="dark"] .material-source-button[aria-selected="true"] {
   border-color: #8e7de5 !important;
   background-color: #6754d9 !important;
   color: #fff !important;
   box-shadow: 0 2px 8px rgb(103 84 217 / 28%);
 }
-main.lecture-lens-dark .material-source-button:focus-visible {
+main.lecture-lens-app[data-theme="dark"] .material-source-button:focus-visible {
   outline: 2px solid #b6aaff !important;
   outline-offset: 2px !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer [class*="bg-[#1"],
+main.lecture-lens-app[data-theme="light"] #timer [class*="bg-[#2"],
+main.lecture-lens-app[data-theme="light"] #timer [class*="bg-[#3"] {
+  background-color: var(--app-surface-inset) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer [class*="border-[#2"],
+main.lecture-lens-app[data-theme="light"] #timer [class*="border-[#3"] {
+  border-color: var(--app-border) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer [class*="text-[#"] {
+  color: var(--app-text-muted) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer [class*="text-[#f"],
+main.lecture-lens-app[data-theme="light"] #timer [class*="text-[#e"] {
+  color: var(--app-text) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-mode[aria-pressed="true"] {
+  background: var(--app-accent-soft) !important;
+  color: var(--app-accent-text) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-notice {
+  background: var(--app-accent-soft) !important;
+  border-color: var(--app-border) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-input {
+  background: var(--app-surface) !important;
+  color: var(--app-text) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer.app-timer-shell {
+  background: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+  color: var(--app-text);
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-heading,
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-time {
+  color: var(--app-text) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-mode-group {
+  background: var(--app-surface-inset) !important;
+  border-color: var(--app-border) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-mode[aria-pressed="false"] {
+  color: var(--app-text-muted) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-settings-button,
+main.lecture-lens-app[data-theme="light"] #timer button[aria-label="Reset timer"],
+main.lecture-lens-app[data-theme="light"] #timer button[aria-label^="Skip to next"] {
+  background: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+  color: var(--app-text) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-plan,
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-settings-panel {
+  background: var(--app-surface-raised) !important;
+  border-color: var(--app-border) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-plan-card {
+  background: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+}
+main.lecture-lens-app[data-theme="light"] #timer .app-timer-icon {
+  background: var(--app-accent-soft) !important;
+  border-color: var(--app-border) !important;
+  color: var(--app-accent-text) !important;
+}
+main.lecture-lens-app [id],
+main.lecture-lens-app article,
+main.lecture-lens-app section {
+  scroll-margin-top: 88px;
+}
+main.lecture-lens-app #notes-output,
+main.lecture-lens-app #practice,
+main.lecture-lens-app #ask,
+main.lecture-lens-app #research {
+  overflow-wrap: anywhere;
+}
+main.lecture-lens-app #notes-output pre,
+main.lecture-lens-app #research pre,
+main.lecture-lens-app #ask pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
@@ -473,28 +632,28 @@ main.lecture-lens-dark .material-source-button:focus-visible {
 }
 @media print {
   body,
-  main.lecture-lens-dark {
+  main.lecture-lens-app {
     background: #fff !important;
     color: #111 !important;
   }
-  main.lecture-lens-dark > header,
-  main.lecture-lens-dark > div > :not(#notes-output) {
+  main.lecture-lens-app > header,
+  main.lecture-lens-app > div > :not(#notes-output) {
     display: none !important;
   }
-  main.lecture-lens-dark #notes-output,
-  main.lecture-lens-dark #notes-output * {
+  main.lecture-lens-app #notes-output,
+  main.lecture-lens-app #notes-output * {
     color: #171717 !important;
     background: #fff !important;
     border-color: #ddd !important;
     box-shadow: none !important;
   }
-  main.lecture-lens-dark #notes-output {
+  main.lecture-lens-app #notes-output {
     display: block !important;
     margin: 0 !important;
     padding: 0 !important;
     border: 0 !important;
   }
-  main.lecture-lens-dark #notes-output button {
+  main.lecture-lens-app #notes-output button {
     display: none !important;
   }
 }

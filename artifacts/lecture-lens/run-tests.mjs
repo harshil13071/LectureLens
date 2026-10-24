@@ -9,17 +9,21 @@ const projectDir = path.dirname(fileURLToPath(import.meta.url));
 const apiRequire = createRequire(new URL('../api-server/package.json', import.meta.url));
 const { build } = apiRequire('esbuild');
 const outputDir = mkdtempSync(path.join(tmpdir(), 'lecturelens-pomodoro-'));
-const outputFile = path.join(outputDir, 'pomodoro.test.mjs');
+const testFiles = ['pomodoro.test.mjs', 'theme.test.mjs'];
 
 try {
   await build({
-    entryPoints: [path.join(projectDir, 'src/lib/pomodoro.test.ts')],
+    entryPoints: [
+      path.join(projectDir, 'src/lib/pomodoro.test.ts'),
+      path.join(projectDir, 'src/lib/theme.test.ts'),
+    ],
     platform: 'node',
     bundle: true,
     format: 'esm',
-    outfile: outputFile,
+    outdir: outputDir,
+    outExtension: { '.js': '.mjs' },
   });
-  const result = spawnSync(process.execPath, ['--test', outputFile], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, ['--test', ...testFiles.map((file) => path.join(outputDir, file))], { stdio: 'inherit' });
   process.exitCode = result.status ?? 1;
 } finally {
   rmSync(outputDir, { recursive: true, force: true });

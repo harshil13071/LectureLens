@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -8,9 +8,10 @@ import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShort
 import {
   ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard,
   ExternalLink, FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw, Search,
-  FileUp, Sparkles, Trash2, Upload, X, Youtube,
+  FileUp, Menu, Moon, Sparkles, Sun, Trash2, Upload, X, Youtube,
 } from 'lucide-react';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
+import { APP_THEME_STORAGE_KEY, parseAppTheme, type AppTheme } from '@/lib/theme';
 import {
   Route,
   Switch,
@@ -24,6 +25,24 @@ type ChatMessage = {
   content: string;
   foundInTranscript?: boolean;
 };
+
+type NavigationSection = 'workspace' | 'notes' | 'practice' | 'ask' | 'research' | 'timer';
+
+function readSavedTheme(): AppTheme {
+  if (typeof window === 'undefined') return 'dark';
+  try {
+    return parseAppTheme(window.localStorage.getItem(APP_THEME_STORAGE_KEY));
+  } catch {
+    return 'dark';
+  }
+}
+
+function sectionForTarget(targetId: string): NavigationSection {
+  if (targetId === 'notes-preview' || targetId === 'notes-output') return 'notes';
+  return ['workspace', 'practice', 'ask', 'research', 'timer'].includes(targetId)
+    ? targetId as NavigationSection
+    : 'workspace';
+}
 
 function formatResearchMarkdown(result: ResearchResult): string {
   return [
@@ -69,6 +88,12 @@ function getMaterialKey(mode: 'paste' | 'upload', material: string): string {
 }
 
 function Home() {
+  const [theme, setTheme] = useState<AppTheme>(readSavedTheme);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<NavigationSection>(() => {
+    if (typeof window === 'undefined') return 'workspace';
+    return sectionForTarget(window.location.hash.slice(1) || 'workspace');
+  });
   const [materialMode, setMaterialMode] = useState<'paste' | 'upload'>('paste');
   const [title, setTitle] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -114,6 +139,42 @@ function Home() {
   const ready = transcript.trim().length > 0;
   const lengthLabel = `${transcript.length.toLocaleString()} / 40,000`;
   const sourceKey = getMaterialKey(materialMode, transcript.trim());
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.classList.toggle('dark', theme === 'dark');
+    root.classList.toggle('light', theme === 'light');
+    root.style.colorScheme = theme;
+    try {
+      window.localStorage.setItem(APP_THEME_STORAGE_KEY, theme);
+    } catch {
+      // Theme switching remains available when browser storage is blocked.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const ids = ['workspace', 'notes-preview', 'notes-output', 'practice', 'ask', 'research', 'timer'];
+    const targets = ids.map((id) => document.getElementById(id)).filter((element): element is HTMLElement => element !== null);
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting)
+        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
+      if (visible[0]) setActiveSection(sectionForTarget(visible[0].target.id));
+    }, { rootMargin: '-82px 0px -65% 0px', threshold: 0 });
+    targets.forEach((target) => observer.observe(target));
+    return () => observer.disconnect();
+  }, [Boolean(notes.data), savedResearch.length]);
+
+  const notesHref = notes.data || notes.isPending || savedResearch.length ? '#notes-output' : '#notes-preview';
+  const navigationItems: Array<{ id: NavigationSection; label: string; href: string }> = [
+    { id: 'workspace', label: 'Workspace', href: '#workspace' },
+    { id: 'notes', label: 'Notes', href: notesHref },
+    { id: 'practice', label: 'Practice', href: '#practice' },
+    { id: 'ask', label: 'Ask', href: '#ask' },
+    { id: 'research', label: 'Research', href: '#research' },
+    { id: 'timer', label: 'Timer', href: '#timer' },
+  ];
 
   const clearWorkspace = () => {
     setTitle('');
@@ -358,23 +419,29 @@ function Home() {
 
 
   return (
-    <main className="lecture-lens-dark min-h-[100dvh] bg-[#f8f7fc] text-[#282641]">
-      <header className="sticky top-0 z-20 border-b border-[#eae8f1] bg-[#faf9fd]/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-[68px] max-w-[1320px] items-center justify-between gap-2 px-3 sm:px-8">
-          <a href="#" className="flex items-center gap-2.5 no-underline" data-testid="link-home">
+    <main className="lecture-lens-app min-h-[100dvh] bg-[var(--app-bg)] text-[var(--app-text)]" data-theme={theme}>
+      <header className="app-header sticky top-0 z-20 border-b backdrop-blur-xl">
+        <div className="mx-auto flex h-[64px] max-w-[1320px] items-center justify-between gap-2 px-3 sm:h-[68px] sm:gap-4 sm:px-6 lg:px-8">
+          <a href="#workspace" onClick={() => setActiveSection('workspace')} className="flex shrink-0 items-center gap-2.5 no-underline" data-testid="link-home">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#6754d9] text-white shadow-[0_5px_12px_rgba(103,84,217,.22)]"><GraduationCap size={20} /></span>
-            <span className="font-display text-[18px] font-extrabold tracking-[-.04em] text-[#292641]">LectureLens</span>
+            <span className="font-display text-[18px] font-extrabold tracking-[-.04em]">LectureLens</span>
           </a>
-          <nav aria-label="Main navigation" className="flex items-center gap-1.5 whitespace-nowrap text-[9px] font-semibold text-[#77738c] sm:gap-5 sm:text-[12px]">
-            <a href="#workspace" data-testid="link-workspace" className="transition hover:text-[#6754d9]">Workspace</a>
-            <a href={notes.data || notes.isPending || savedResearch.length ? '#notes-output' : '#notes-preview'} data-testid="link-notes-preview" className="transition hover:text-[#6754d9]">Notes</a>
-            <a href="#practice" data-testid="link-practice" className="transition hover:text-[#6754d9]">Practice</a>
-            <a href="#ask" data-testid="link-ask" className="transition hover:text-[#6754d9]">Ask</a>
-            <a href="#research" data-testid="link-research" className="transition hover:text-[#6754d9]">Research</a>
-            <a href="#timer" data-testid="link-timer" className="transition hover:text-[#6754d9]">Timer</a>
+          <nav aria-label="Main navigation" className="app-navigation hidden items-center gap-1 rounded-xl p-1 text-[12px] font-semibold md:flex">
+            {navigationItems.map((item) => <a key={item.id} href={item.href} onClick={() => setActiveSection(item.id)} aria-current={activeSection === item.id ? 'location' : undefined} data-testid={`link-${item.id}`} className={`app-nav-link rounded-lg px-3 py-2 transition ${activeSection === item.id ? 'is-active' : ''}`}>{item.label}</a>)}
           </nav>
-          <div className="hidden items-center gap-2 rounded-full border border-[#e9e6f2] bg-white px-3 py-1.5 text-[12px] font-medium text-[#77738c] sm:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#7c68e6]" /> Your personal study space
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button type="button" data-testid="button-theme-toggle" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} aria-pressed={theme === 'dark'} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} className="app-theme-toggle grid h-10 w-10 place-items-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9585ff]">
+              {theme === 'dark' ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+            </button>
+            <button type="button" data-testid="button-mobile-navigation" aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={mobileNavOpen} aria-controls={mobileNavOpen ? 'mobile-navigation' : undefined} onClick={() => setMobileNavOpen((open) => !open)} className="app-theme-toggle grid h-10 w-10 place-items-center rounded-xl border md:hidden">
+              {mobileNavOpen ? <X size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}
+            </button>
+          </div>
+          {mobileNavOpen && <nav id="mobile-navigation" aria-label="Mobile main navigation" className="app-mobile-navigation absolute inset-x-3 top-[calc(100%+8px)] z-30 grid gap-1 rounded-2xl border p-2 shadow-xl md:hidden">
+            {navigationItems.map((item) => <a key={item.id} href={item.href} onClick={() => { setActiveSection(item.id); setMobileNavOpen(false); }} aria-current={activeSection === item.id ? 'location' : undefined} data-testid={`mobile-link-${item.id}`} className={`app-nav-link min-h-11 rounded-xl px-3 py-2.5 text-[13px] font-semibold ${activeSection === item.id ? 'is-active' : ''}`}>{item.label}</a>)}
+          </nav>}
+          <div className="hidden items-center gap-2 rounded-full border bg-[var(--app-surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--app-text-muted)] xl:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#7c68e6]" /> Personal study space
           </div>
         </div>
       </header>
@@ -388,7 +455,7 @@ function Home() {
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#e6e1fa] bg-white/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[.13em] text-[#7565cb]">
                 <Sparkles size={13} /> A clearer way to study
               </div>
-              <h1 className="font-display max-w-[720px] text-[42px] font-extrabold leading-[1.06] tracking-[-.055em] text-[#292641] sm:text-[58px] lg:text-[66px]">Turn lectures into learning.</h1>
+              <h1 className="font-display max-w-[820px] text-[38px] font-extrabold leading-[1.08] tracking-[-.05em] text-[#292641] sm:text-[48px] lg:text-[54px]">Turn lectures into learning.</h1>
               <p className="mt-5 max-w-[600px] text-[16px] leading-7 text-[#77748c] sm:text-[18px]">Transform lecture transcripts into clear notes, quizzes, and answers.</p>
             </div>
             <div className="rise-in-delay hidden lg:block">
