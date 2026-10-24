@@ -15,7 +15,7 @@ function sanitizeProviderMessage(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const sanitized = value
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
-    .replace(/\bsk-or-v1-[a-zA-Z0-9_-]+/gi, "[redacted]")
+    .replace(/\b(?:sk-or-v1-|gsk_)[a-zA-Z0-9_-]+/gi, "[redacted]")
     .replace(/\b(?:api[_ -]?key|token)\s*[:=]\s*\S+/gi, "[credential redacted]")
     .replace(/https?:\/\/\S+/gi, "[provider URL]")
     .replace(/\s+/g, " ")
@@ -41,12 +41,12 @@ export async function requestLectureLensJson(
   userPrompt: string,
   conversation: Array<{ role: "user" | "assistant"; content: string }> = [],
 ): Promise<unknown> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.OPENROUTER_MODEL;
+  const apiKey = process.env.GROQ_API_KEY;
+const model = process.env.GROQ_MODEL;
 
   if (!apiKey || !model) {
     throw new LectureLensAiError(
-      "AI generation is not configured yet. Add OPENROUTER_API_KEY and OPENROUTER_MODEL as server-side secrets, then try again.",
+      "AI generation is not configured yet. Add Check GROQ_API_KEY and GROK_MODEL as server-side secrets, then try again.",
       503,
       "AI_NOT_CONFIGURED",
     );
@@ -54,7 +54,7 @@ export async function requestLectureLensJson(
 
   let response: Response;
   try {
-    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
