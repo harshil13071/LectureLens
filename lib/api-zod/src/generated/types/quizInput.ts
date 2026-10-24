@@ -23,4 +23,10 @@ export interface QuizInput {
      */
   questionCount?: number;
   difficulty?: QuizInputDifficulty;
+  /**
+     * @maxItems 60
+     * @items.minLength 1
+     * @items.maxLength 500
+     */
+  previousQuestions?: string[];
 }

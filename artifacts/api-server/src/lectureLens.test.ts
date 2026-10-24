@@ -210,6 +210,19 @@ test("API Endpoints validation and behavior with mock provider", async (t) => {
     assert.equal(body.code, "INVALID_QUESTION");
   });
 
+  await t.test("POST /research rejects empty queries and invalid styles before searching", async () => {
+    const empty = await fetch(`${baseUrl}/research`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "   " }),
+    });
+    assert.equal(empty.status, 400);
+    const invalidStyle = await fetch(`${baseUrl}/research`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "Some topic", mode: "invented" }),
+    });
+    assert.equal(invalidStyle.status, 400);
+  });
+
   await t.test("POST /extract-text extracts TXT content regardless of claimed MIME type", async () => {
     const text = "A readable lecture transcript with more than a few words.";
     const res = await fetch(`${baseUrl}/extract-text`, {
@@ -343,6 +356,12 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
   let returnStatus = 200;
   let returnPayload: unknown | ((callCount: number) => unknown) = null;
   let returnHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  let langSearchCallCount = 0;
+  let langSearchStatus = 200;
+  let langSearchPayload: unknown = { code: 200, data: { webPages: { value: [] } } };
+  let langSearchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  let lastLangSearchBody: Record<string, unknown> | null = null;
+  let lastLangSearchAuthorization = "";
 
   const mockGroqServer = http.createServer(async (req, res) => {
     mockCallCount++;
@@ -374,20 +393,30 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
 
   // Mock global fetch for Groq API
   const originalFetch = globalThis.fetch;
+  const originalLangSearchKey = process.env.LANGSEARCH_API_KEY;
   globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as { url: string }).url;
     if (urlStr.startsWith("https://api.groq.com/openai/v1/chat/completions")) {
       return originalFetch(mockGroqUrl, init);
+    }
+    if (urlStr.startsWith("https://api.langsearch.com/v1/web-search")) {
+      langSearchCallCount++;
+      lastLangSearchAuthorization = new Headers(init?.headers).get("authorization") ?? "";
+      lastLangSearchBody = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : null;
+      return new Response(JSON.stringify(langSearchPayload), { status: langSearchStatus, headers: langSearchHeaders });
     }
     return originalFetch(input, init);
   }) as typeof fetch;
 
   process.env.GROQ_API_KEY = "gsk_test_mock_key_12345";
   process.env.GROQ_MODEL = "openai/gpt-oss-20b";
+  process.env.LANGSEARCH_API_KEY = "langsearch_test_mock_key";
   clearAiCache();
 
   t.after(() => {
     globalThis.fetch = originalFetch;
+    if (originalLangSearchKey === undefined) delete process.env.LANGSEARCH_API_KEY;
+    else process.env.LANGSEARCH_API_KEY = originalLangSearchKey;
     mockGroqServer.close();
     server.close();
   });
@@ -798,5 +827,160 @@ test("Realistic mock integration test verifying Notes, Quiz, and Ask schemas and
     const dateHeaderData = await dateHeaderRes.json() as { retryAfter: number };
     assert.ok(dateHeaderData.retryAfter > 0 && dateHeaderData.retryAfter <= 30);
     assert.equal(mockCallCount, 2);
+  });
+
+  await t.test("Research uses actual LangSearch results, preserves sources, and requests fresh synthesis", async () => {
+    clearAiCache();
+    mockCallCount = 0;
+    langSearchCallCount = 0;
+    langSearchStatus = 200;
+    langSearchHeaders = { "Content-Type": "application/json" };
+    langSearchPayload = { code: 200, data: { webPages: { value: [
+      { name: "Official Virtual Memory Guide", url: "https://example.test/virtual-memory", snippet: "Virtual memory maps virtual pages to physical frames.", datePublished: "2 days ago" },
+      { name: "Operating Systems Reference", url: "https://example.test/os-reference", snippet: "Page faults occur when a mapping is missing." },
+    ] } } };
+    returnStatus = 200;
+    returnHeaders = { "Content-Type": "application/json" };
+    returnPayload = { choices: [{ message: { content: JSON.stringify({
+      overview: "Virtual memory maps process address spaces to physical memory.",
+      sections: [{ heading: "Paging", content: "Page tables map virtual pages to physical frames [Source 1]." }],
+      keyConcepts: [{ term: "Page fault", definition: "A fault occurs when the requested page is not currently mapped [Source 2]." }],
+      examples: [],
+      sources: [{ title: "Invented", url: "https://fake.test", snippet: "not real" }],
+    }) } }] };
+
+    const sendResearch = () => fetch(`${baseUrl}/research`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "How does virtual memory work?", mode: "detailed" }),
+    });
+    const first = await sendResearch();
+    assert.equal(first.status, 200);
+    const firstResult = await first.json() as { sources: Array<{ title: string; url: string; snippet: string; datePublished?: string }> };
+    assert.deepEqual(firstResult.sources.map(({ title, url }) => ({ title, url })), [
+      { title: "Official Virtual Memory Guide", url: "https://example.test/virtual-memory" },
+      { title: "Operating Systems Reference", url: "https://example.test/os-reference" },
+    ]);
+    assert.equal(firstResult.sources[0].datePublished, "2 days ago");
+    assert.equal(firstResult.sources[0].snippet, "Virtual memory maps virtual pages to physical frames.");
+    assert.match(String((lastRequestBody?.messages as Array<{ content: string }>)[0].content), /in-depth, rigorous breakdown/i);
+    assert.match(String((lastRequestBody?.messages as Array<{ content: string }>)[0].content), /untrusted evidence/i);
+
+    langSearchPayload = { code: 200, data: { webPages: { value: [
+      { name: "Updated Virtual Memory Source", url: "https://example.test/updated", snippet: "Updated search evidence." },
+    ] } } };
+    const second = await sendResearch();
+    assert.equal(second.status, 200);
+    const secondResult = await second.json() as { sources: Array<{ title: string }> };
+    assert.equal(secondResult.sources[0].title, "Updated Virtual Memory Source");
+    assert.equal(langSearchCallCount, 2);
+    assert.equal(mockCallCount, 2, "identical queries are synthesized from each fresh search response");
+    assert.equal(lastLangSearchAuthorization, "Bearer langsearch_test_mock_key");
+    assert.deepEqual(lastLangSearchBody, { query: "How does virtual memory work?", count: 6 });
+  });
+
+  await t.test("Research search failures never fall back and expose Retry-After", async () => {
+    mockCallCount = 0;
+    langSearchCallCount = 0;
+    langSearchStatus = 429;
+    langSearchHeaders = { "Content-Type": "application/json", "Retry-After": "18" };
+    const res = await fetch(`${baseUrl}/research`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "recent research topic", mode: "overview" }),
+    });
+    assert.equal(res.status, 429);
+    assert.equal(res.headers.get("retry-after"), "18");
+    const body = await res.json() as { code: string; retryAfter: number };
+    assert.equal(body.code, "SEARCH_RATE_LIMITED");
+    assert.equal(body.retryAfter, 18);
+    assert.equal(mockCallCount, 0, "search failure must not be presented as an AI-only answer");
+    assert.equal(langSearchCallCount, 1, "the provider is called once without an automatic retry");
+  });
+
+  await t.test("Research returns a configuration error when the search key is missing", async () => {
+    const configuredKey = process.env.LANGSEARCH_API_KEY;
+    delete process.env.LANGSEARCH_API_KEY;
+    langSearchCallCount = 0;
+    const res = await fetch(`${baseUrl}/research`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "a valid topic" }),
+    });
+    if (configuredKey !== undefined) process.env.LANGSEARCH_API_KEY = configuredKey;
+    assert.equal(res.status, 503);
+    assert.equal((await res.json() as { code: string }).code, "SEARCH_NOT_CONFIGURED");
+    assert.equal(langSearchCallCount, 0);
+  });
+
+  await t.test("Research rejects malformed LangSearch response shapes", async () => {
+    langSearchStatus = 200;
+    langSearchHeaders = { "Content-Type": "application/json" };
+    mockCallCount = 0;
+    for (const payload of [
+      { data: { webPages: { value: [] } } },
+      { code: 200, data: { webPages: { value: "not-an-array" } } },
+    ]) {
+      langSearchPayload = payload;
+      const res = await fetch(`${baseUrl}/research`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "valid topic" }),
+      });
+      assert.equal(res.status, 502);
+      assert.equal((await res.json() as { code: string }).code, "SEARCH_INVALID_RESPONSE");
+    }
+    assert.equal(mockCallCount, 0);
+  });
+
+  await t.test("Research rejects unusable source URLs without synthesizing an answer", async () => {
+    langSearchPayload = { code: 200, data: { webPages: { value: [{ name: "Bad URL", url: "javascript:alert(1)", snippet: "invalid" }] } } };
+    mockCallCount = 0;
+    const noResults = await fetch(`${baseUrl}/research`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "valid topic" }),
+    });
+    assert.equal(noResults.status, 502);
+    assert.equal(mockCallCount, 0);
+    assert.equal((await noResults.json() as { code: string }).code, "SEARCH_NO_RESULTS");
+    assert.equal(mockCallCount, 0);
+  });
+
+  await t.test("Research provider HTTP failures are returned without AI fallback", async () => {
+    langSearchStatus = 500;
+    langSearchHeaders = { "Content-Type": "application/json" };
+    langSearchPayload = { code: 500, msg: "temporary search outage" };
+    mockCallCount = 0;
+    const res = await fetch(`${baseUrl}/research`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "valid topic" }),
+    });
+    assert.equal(res.status, 502);
+    assert.equal((await res.json() as { code: string }).code, "SEARCH_PROVIDER_ERROR");
+    assert.equal(mockCallCount, 0);
+
+    langSearchStatus = 200;
+    langSearchPayload = { code: 429, msg: "rate limit reached" };
+    const apiErrorResponse = await fetch(`${baseUrl}/research`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "valid topic" }),
+    });
+    assert.equal(apiErrorResponse.status, 429);
+    assert.equal((await apiErrorResponse.json() as { code: string }).code, "SEARCH_RATE_LIMITED");
+    assert.equal(mockCallCount, 0);
+  });
+
+  await t.test("Research synthesis failures do not fabricate or return sources as an answer", async () => {
+    langSearchStatus = 200;
+    langSearchPayload = { code: 200, data: { webPages: { value: [{ name: "Actual source", url: "https://example.test/real", snippet: "Actual search snippet." }] } } };
+    returnStatus = 200;
+    returnPayload = { choices: [{ message: { content: JSON.stringify({ overview: "Incomplete answer" }) } }] };
+    const failedSynthesis = await fetch(`${baseUrl}/research`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "valid topic" }),
+    });
+    assert.equal(failedSynthesis.status, 502);
+    assert.equal(mockCallCount, 1);
+    const error = await failedSynthesis.json() as { error: string; code: string };
+    assert.equal(error.code, "OPERATION_FAILED");
+    assert.equal("sources" in error, false);
   });
 });

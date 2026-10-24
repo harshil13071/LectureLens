@@ -4,10 +4,10 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
-import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShortAnswer, useExtractDocumentText } from '@workspace/api-client-react';
+import { useAskLecture, useGenerateQuiz, useGenerateStudyNotes, useEvaluateShortAnswer, useExtractDocumentText, useResearchTopic, type ResearchResult } from '@workspace/api-client-react';
 import {
   ArrowDownToLine, ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, Clipboard,
-  FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw,
+  ExternalLink, FileText, GraduationCap, Lightbulb, Link2, LoaderCircle, MessageCircle, RotateCcw, Search,
   FileUp, Sparkles, Trash2, Upload, X, Youtube,
 } from 'lucide-react';
 import {
@@ -23,6 +23,22 @@ type ChatMessage = {
   content: string;
   foundInTranscript?: boolean;
 };
+
+function formatResearchMarkdown(result: ResearchResult): string {
+  return [
+    `# Research: ${result.topic}`,
+    `Style: ${result.mode}`,
+    '',
+    result.overview,
+    ...result.sections.flatMap((section) => [`\n## ${section.heading}`, section.content]),
+    ...(result.keyConcepts.length ? ['', '## Key concepts', ...result.keyConcepts.map((item) => `- **${item.term}:** ${item.definition}`)] : []),
+    ...(result.examples?.length ? ['', '## Examples', ...result.examples.map((example) => `- ${example}`)] : []),
+    ...(result.uncertaintyNote ? ['', '## Limitations and uncertainty', result.uncertaintyNote] : []),
+    '',
+    '## Sources',
+    ...result.sources.map((source) => `- [${source.title}](${source.url})${source.datePublished ? ` · ${source.datePublished}` : ''}`),
+  ].join('\n');
+}
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object' && 'data' in error) {
@@ -73,18 +89,26 @@ function Home() {
   const [evaluations, setEvaluations] = useState<Record<number, Awaited<ReturnType<ReturnType<typeof useEvaluateShortAnswer>['mutateAsync']>>>>({});
   const [evaluationError, setEvaluationError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [researchQuery, setResearchQuery] = useState('');
+  const [researchMode, setResearchMode] = useState<'overview' | 'detailed' | 'exam_prep' | 'comparison'>('overview');
+  const [savedResearch, setSavedResearch] = useState<ResearchResult[]>([]);
+  const [researchCopied, setResearchCopied] = useState(false);
+  const [researchRetryAfter, setResearchRetryAfter] = useState(0);
   const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [isDraggingDocument, setIsDraggingDocument] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadInFlightRef = useRef(false);
   const quizRequestInFlightRef = useRef(false);
+  const researchRequestInFlightRef = useRef(false);
   const quizRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const researchRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notes = useGenerateStudyNotes();
   const quiz = useGenerateQuiz();
   const evaluateAnswer = useEvaluateShortAnswer();
   const documentExtraction = useExtractDocumentText();
   const ask = useAskLecture();
+  const research = useResearchTopic();
   const transcript = materialMode === 'upload' ? uploadedStudyMaterial : pastedTranscript;
   const ready = transcript.trim().length > 0;
   const lengthLabel = `${transcript.length.toLocaleString()} / 40,000`;
@@ -110,6 +134,12 @@ function Home() {
     notes.reset();
     quiz.reset();
     ask.reset();
+    research.reset();
+    if (researchRetryTimerRef.current) clearTimeout(researchRetryTimerRef.current);
+    researchRetryTimerRef.current = null;
+    setResearchRetryAfter(0);
+    setResearchQuery('');
+    setSavedResearch([]);
   };
 
   const handleDocumentFile = (file?: File) => {
@@ -248,15 +278,15 @@ function Home() {
   };
   const getNotesText = () => {
     const result = notes.data;
-    if (!result) return '';
-    return [
+    const generatedNotes = result ? [
       title.trim() || 'Lecture notes',
       'OVERVIEW', result.overview,
       ...result.topics.flatMap((topic) => [`\n${topic.title}`, ...topic.notes.map((line) => `• ${line}`)]),
       '\nKEY CONCEPTS', ...result.keyConcepts.map((concept) => `${concept.term}: ${concept.definition}`),
       '\nTAKEAWAYS', ...result.takeaways.map((takeaway) => `• ${takeaway}`),
       '\nQUICK REVISION', result.quickRevision,
-    ].join('\n');
+    ].join('\n') : '';
+    return [generatedNotes, ...savedResearch.map(formatResearchMarkdown)].filter(Boolean).join('\n\n---\n\n');
   };
   const copyNotes = async () => {
     try {
@@ -277,6 +307,54 @@ function Home() {
     URL.revokeObjectURL(url);
   };
 
+  const runResearch = (queryValue = researchQuery) => {
+    const query = queryValue.trim();
+    if (query.length < 2 || research.isPending || researchRequestInFlightRef.current || researchRetryAfter > 0) return;
+    researchRequestInFlightRef.current = true;
+    research.mutate({ data: { query, mode: researchMode } }, {
+      onSuccess: () => {
+        researchRequestInFlightRef.current = false;
+        if (researchRetryTimerRef.current) clearTimeout(researchRetryTimerRef.current);
+        researchRetryTimerRef.current = null;
+        setResearchRetryAfter(0);
+      },
+      onError: (error) => {
+        researchRequestInFlightRef.current = false;
+        const data = error && typeof error === 'object' && 'data' in error ? (error as { data?: unknown }).data : undefined;
+        const retryAfter = data && typeof data === 'object' && 'retryAfter' in data && typeof data.retryAfter === 'number' ? data.retryAfter : 0;
+        if (retryAfter > 0) {
+          setResearchRetryAfter(retryAfter);
+          if (researchRetryTimerRef.current) clearTimeout(researchRetryTimerRef.current);
+          researchRetryTimerRef.current = setTimeout(() => {
+            setResearchRetryAfter(0);
+            researchRetryTimerRef.current = null;
+          }, retryAfter * 1000);
+        }
+      },
+    });
+  };
+
+  const copyResearch = async () => {
+    if (!research.data) return;
+    try {
+      await navigator.clipboard.writeText(formatResearchMarkdown(research.data));
+      setResearchCopied(true);
+      window.setTimeout(() => setResearchCopied(false), 1800);
+    } catch {
+      setResearchCopied(false);
+    }
+  };
+  const downloadResearch = () => {
+    if (!research.data) return;
+    const file = new Blob([formatResearchMarkdown(research.data)], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${research.data.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'research'}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
 
   return (
     <main className="lecture-lens-dark min-h-[100dvh] bg-[#f8f7fc] text-[#282641]">
@@ -288,9 +366,10 @@ function Home() {
           </a>
           <nav aria-label="Main navigation" className="flex items-center gap-1.5 whitespace-nowrap text-[9px] font-semibold text-[#77738c] sm:gap-5 sm:text-[12px]">
             <a href="#workspace" data-testid="link-workspace" className="transition hover:text-[#6754d9]">Workspace</a>
-            <a href={notes.data || notes.isPending ? '#notes-output' : '#notes-preview'} data-testid="link-notes-preview" className="transition hover:text-[#6754d9]">Notes</a>
+            <a href={notes.data || notes.isPending || savedResearch.length ? '#notes-output' : '#notes-preview'} data-testid="link-notes-preview" className="transition hover:text-[#6754d9]">Notes</a>
             <a href="#practice" data-testid="link-practice" className="transition hover:text-[#6754d9]">Practice</a>
             <a href="#ask" data-testid="link-ask" className="transition hover:text-[#6754d9]">Ask</a>
+            <a href="#research" data-testid="link-research" className="transition hover:text-[#6754d9]">Research</a>
           </nav>
           <div className="hidden items-center gap-2 rounded-full border border-[#e9e6f2] bg-white px-3 py-1.5 text-[12px] font-medium text-[#77738c] sm:flex">
             <span className="h-1.5 w-1.5 rounded-full bg-[#7c68e6]" /> Your personal study space
@@ -397,14 +476,14 @@ function Home() {
                 <div className="flex gap-2.5"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#b09fe9]" /><p className="text-[12px] leading-5 text-[#67627d]"><strong className="text-[#49445f]">Key takeaway</strong> — the idea worth carrying forward.</p></div>
               </div>
             </div>
-            <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#e1dcf3] bg-white/55 px-3.5 py-3 text-[11px] leading-5 text-[#8179a2]"><Sparkles size={14} className="shrink-0 text-[#8977df]" /> Your notes will appear here after generation.</div>
+            <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#e1dcf3] bg-white/55 px-3.5 py-3 text-[11px] leading-5 text-[#8179a2]"><Sparkles size={14} className="shrink-0 text-[#8977df]" /> Your notes will appear here after generation. Saved research will be added below the generated notes.</div>
           </aside>
         </section>
 
-        {(notes.data || notes.isPending) && <section id="notes-output" className="mt-6 scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-7">
+        {(notes.data || notes.isPending || savedResearch.length > 0) && <section id="notes-output" className="mt-6 scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-7">
           <div className="flex flex-col gap-4 border-b border-[#efedf4] pb-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><FileText size={19} /></div><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-display text-[20px] font-bold tracking-[-.03em]">{title || 'Your study notes'}</h2><span className="rounded-full bg-[#eeebff] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[.1em] text-[#725fcf]">Generated from transcript</span></div><p className="mt-0.5 text-[12px] text-[#908c9f]">A structured guide to what your lecture covered.</p></div></div>
-            {notes.data && <div className="flex gap-2"><button onClick={copyNotes} data-testid="button-copy-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]">{copied ? <Check size={14} /> : <Clipboard size={14} />}{copied ? 'Copied' : 'Copy'}</button><button onClick={downloadNotes} data-testid="button-download-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]"><ArrowDownToLine size={14} /> Download</button></div>}
+            <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><FileText size={19} /></div><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-display text-[20px] font-bold tracking-[-.03em]">{title || 'Your study notes'}</h2>{notes.data && <span className="rounded-full bg-[#eeebff] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[.1em] text-[#725fcf]">Generated from transcript</span>}</div><p className="mt-0.5 text-[12px] text-[#908c9f]">A structured guide with any research you chose to save.</p></div></div>
+            {(notes.data || savedResearch.length > 0) && <div className="flex gap-2"><button onClick={copyNotes} data-testid="button-copy-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]">{copied ? <Check size={14} /> : <Clipboard size={14} />}{copied ? 'Copied' : 'Copy'}</button><button onClick={downloadNotes} data-testid="button-download-notes" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] px-3 text-[12px] font-semibold text-[#625d79] hover:bg-[#faf9fc]"><ArrowDownToLine size={14} /> Download</button></div>}
           </div>
           {notes.isPending ? <div className="grid gap-4 pt-6 sm:grid-cols-2"><div className="space-y-3"><div className="h-4 w-24 animate-pulse rounded bg-[#efedf5]" /><div className="h-3 w-full animate-pulse rounded bg-[#f3f1f7]" /><div className="h-3 w-5/6 animate-pulse rounded bg-[#f3f1f7]" /></div><div className="space-y-3"><div className="h-4 w-32 animate-pulse rounded bg-[#efedf5]" /><div className="h-3 w-full animate-pulse rounded bg-[#f3f1f7]" /><div className="h-3 w-4/6 animate-pulse rounded bg-[#f3f1f7]" /></div></div> : notes.data && <div className="grid gap-x-12 gap-y-7 pt-6 md:grid-cols-2">
             <article className="md:col-span-2"><h3 className="mb-2 text-[11px] font-bold uppercase tracking-[.14em] text-[#8176bb]">Overview</h3><p className="max-w-4xl text-[14px] leading-7 text-[#59566f]">{notes.data.overview}</p></article>
@@ -413,7 +492,38 @@ function Home() {
             <article><h3 className="mb-3 text-[11px] font-bold uppercase tracking-[.14em] text-[#8176bb]">Takeaways</h3><ul className="space-y-2.5">{notes.data.takeaways.map((line, index) => <li key={`${line}-${index}`} className="flex gap-2.5 text-[13px] leading-6 text-[#666279]"><CheckCircle2 size={16} className="mt-1 shrink-0 text-[#8170d8]" />{line}</li>)}</ul></article>
             <article className="rounded-2xl border border-[#e8e2fc] bg-[#f7f4ff] p-4 md:col-span-2"><h3 className="mb-2 text-[11px] font-bold uppercase tracking-[.14em] text-[#7565c7]">Quick revision</h3><p className="text-[13px] leading-6 text-[#5e5879]">{notes.data.quickRevision}</p></article>
           </div>}
+          {!notes.isPending && savedResearch.length > 0 && <div className="mt-6 space-y-5 border-t border-[#efedf4] pt-5">
+            <h3 className="text-[11px] font-bold uppercase tracking-[.14em] text-[#7565c7]">Saved research</h3>
+            {savedResearch.map((item, index) => <article key={`${item.topic}-${index}`} className="rounded-xl bg-[#faf9fe] p-4">
+              <h4 className="font-display text-[16px] font-bold text-[#45415b]">{item.topic}</h4><p className="mt-2 text-[13px] leading-6 text-[#666279]">{item.overview}</p>
+              {item.sections.map((section, sectionIndex) => <div key={`${section.heading}-${sectionIndex}`} className="mt-3"><h5 className="text-[12px] font-bold text-[#514b6e]">{section.heading}</h5><p className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-[#716d82]">{section.content}</p></div>)}
+              <ul className="mt-3 space-y-1.5">{item.sources.map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6754d9] hover:underline">{source.title}<ExternalLink size={11} /></a></li>)}</ul>
+            </article>)}
+          </div>}
         </section>}
+
+        <section id="research" className="mt-6 scroll-mt-24 rounded-[22px] border border-[#e9e7ef] bg-white p-5 shadow-[0_5px_24px_rgba(55,48,94,.045)] sm:p-7">
+          <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[13px] bg-[#f0edff] text-[#6c59d4]"><Search size={19} /></div><div><h2 className="font-display text-[20px] font-bold tracking-[-.03em]">Research</h2><p className="text-[12px] text-[#908c9f]">Explore a question with a sourced answer synthesized from current web results.</p></div></div>
+          <form className="mt-5" onSubmit={(event) => { event.preventDefault(); runResearch(); }}>
+            <label htmlFor="research-query" className="mb-2 block text-[12px] font-bold text-[#4b4861]">What would you like to learn about?</label>
+            <textarea id="research-query" data-testid="input-research-query" value={researchQuery} onChange={(event) => setResearchQuery(event.target.value.slice(0, 500))} maxLength={500} placeholder="What would you like to learn about?" className="min-h-[105px] w-full resize-y rounded-xl border border-[#e8e6ef] bg-[#fcfbfe] p-3.5 text-[13px] leading-6 text-[#302d48] outline-none transition placeholder:text-[#aaa6b7] focus:border-[#a89aed] focus:ring-4 focus:ring-[#7765df]/10" />
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label htmlFor="research-style" className="flex-1 text-[11px] font-bold text-[#5b5672]">Answer style<select id="research-style" data-testid="select-research-style" value={researchMode} onChange={(event) => setResearchMode(event.target.value as typeof researchMode)} className="mt-1.5 h-10 w-full rounded-lg border border-[#e0dcef] bg-white px-3 text-[12px]"><option value="overview">Brief Overview</option><option value="detailed">Detailed Explanation</option><option value="exam_prep">Exam Preparation</option><option value="comparison">Compare Concepts</option></select></label>
+              <button type="submit" data-testid="button-research" disabled={researchQuery.trim().length < 2 || research.isPending || researchRetryAfter > 0} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#6754d9] px-5 text-[12px] font-bold text-white transition hover:bg-[#5845c8] disabled:cursor-not-allowed disabled:opacity-45">{research.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Search size={14} />}{research.isPending ? 'Researching…' : researchRetryAfter ? `Retry in ${researchRetryAfter}s` : 'Research'}</button>
+            </div>
+          </form>
+          {research.isPending && <div role="status" className="mt-5 flex items-center gap-2 rounded-xl border border-[#e9e7ef] bg-[#faf9fe] px-4 py-3 text-[12px] text-[#77738c]"><LoaderCircle size={15} className="animate-spin" /> Searching current sources and preparing a grounded answer…</div>}
+          {research.isError && <div role="alert" data-testid="status-research-error" className="mt-5 flex flex-col gap-3 rounded-xl border border-[#f2d8d6] bg-[#fff8f7] px-4 py-3 text-[12px] text-[#a94e48] sm:flex-row sm:items-center sm:justify-between"><span>{getApiErrorMessage(research.error, 'Research could not be completed. Please try again.')}</span><button type="button" onClick={() => runResearch()} disabled={research.isPending || researchRetryAfter > 0} className="inline-flex items-center gap-1 self-start font-bold underline disabled:opacity-50"><RotateCcw size={13} />{researchRetryAfter ? `Retry in ${researchRetryAfter}s` : 'Retry'}</button></div>}
+          {research.data && <article data-testid="research-results" className="mt-6 rounded-2xl border border-[#ebe8f3] bg-[#fcfbfe] p-4 sm:p-5">
+            <div className="flex flex-col gap-3 border-b border-[#efedf4] pb-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[.13em] text-[#8176bb]">Research answer</p><h3 className="mt-1 font-display text-[18px] font-bold text-[#403c56]">{research.data.topic}</h3></div><div className="flex flex-wrap gap-2"><button type="button" onClick={copyResearch} data-testid="button-copy-research" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] bg-white px-3 text-[11px] font-semibold text-[#625d79] hover:bg-[#faf9fc]">{researchCopied ? <Check size={13} /> : <Clipboard size={13} />}{researchCopied ? 'Copied' : 'Copy Answer'}</button><button type="button" onClick={downloadResearch} data-testid="button-download-research" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e8e5ef] bg-white px-3 text-[11px] font-semibold text-[#625d79] hover:bg-[#faf9fc]"><ArrowDownToLine size={13} /> Download Answer</button><button type="button" onClick={() => setSavedResearch((current) => current.includes(research.data!) ? current : [...current, research.data!])} disabled={savedResearch.includes(research.data)} data-testid="button-save-research" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dcd5f7] bg-[#f8f6ff] px-3 text-[11px] font-semibold text-[#6655c6] hover:bg-[#f0edff] disabled:cursor-default disabled:opacity-60"><BookOpen size={13} />{savedResearch.includes(research.data) ? 'Saved to Notes' : 'Save to Notes'}</button></div></div>
+            <p className="mt-4 text-[13px] leading-6 text-[#59566f]">{research.data.overview}</p>
+            <div className="mt-4 space-y-4">{research.data.sections.map((section, index) => <section key={`${section.heading}-${index}`}><h4 className="font-display text-[15px] font-bold text-[#45415b]">{section.heading}</h4><p className="mt-1 whitespace-pre-wrap text-[13px] leading-6 text-[#666279]">{section.content}</p></section>)}</div>
+            {research.data.keyConcepts.length > 0 && <div className="mt-4"><h4 className="text-[11px] font-bold uppercase tracking-[.12em] text-[#8176bb]">Key concepts</h4><dl className="mt-2 grid gap-2 sm:grid-cols-2">{research.data.keyConcepts.map((concept, index) => <div key={`${concept.term}-${index}`} className="rounded-lg bg-white p-3"><dt className="text-[12px] font-bold text-[#45415b]">{concept.term}</dt><dd className="mt-1 text-[12px] leading-5 text-[#716d82]">{concept.definition}</dd></div>)}</dl></div>}
+            {research.data.examples && research.data.examples.length > 0 && <ul className="mt-4 list-disc space-y-1 pl-5 text-[12px] leading-5 text-[#666279]">{research.data.examples.map((example, index) => <li key={index}>{example}</li>)}</ul>}
+            {research.data.uncertaintyNote && <p className="mt-4 rounded-lg border border-[#f0e6ce] bg-[#fffaf0] p-3 text-[11px] leading-5 text-[#806b3b]"><strong>Limitations and uncertainty:</strong> {research.data.uncertaintyNote}</p>}
+            <div className="mt-5 border-t border-[#efedf4] pt-4"><h4 className="text-[11px] font-bold uppercase tracking-[.12em] text-[#8176bb]">Sources</h4><ol className="mt-2 space-y-2">{research.data.sources.map((source, index) => <li key={`${source.url}-${index}`} className="text-[12px] leading-5"><a href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-start gap-1 font-semibold text-[#6754d9] hover:underline">[{index + 1}] {source.title}<ExternalLink size={12} className="mt-0.5 shrink-0" /></a>{source.datePublished && <span className="ml-2 text-[10px] text-[#908c9f]">{source.datePublished}</span>}{source.snippet && <p className="mt-0.5 text-[#77738c]">{source.snippet}</p>}</li>)}</ol><p className="mt-3 text-[10px] text-[#9995a8]">This synthesis uses search-result snippets as evidence; open the original sources for full context.</p></div>
+          </article>}
+        </section>
 
         <section className="mt-6 grid gap-5 lg:grid-cols-2">
           <div id="practice" className="scroll-mt-24 rounded-[22px] border-2 border-[#dcd5f7] bg-white p-5 shadow-[0_8px_28px_rgba(103,84,217,.09)] sm:p-6">

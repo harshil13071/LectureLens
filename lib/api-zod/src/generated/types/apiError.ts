@@ -9,4 +9,6 @@
 export interface ApiError {
   error: string;
   code: string;
+  /** @minimum 1 */
+  retryAfter?: number;
 }

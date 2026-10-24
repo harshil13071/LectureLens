@@ -261,6 +261,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Search provider rate limit reached
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Search provider is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "502":
           description: Web search or AI synthesis failed
           content:
@@ -560,6 +576,8 @@ components:
           type: string
         snippet:
           type: string
+        datePublished:
+          type: string
       required:
         - title
         - url
@@ -604,6 +622,9 @@ components:
           type: string
         code:
           type: string
+        retryAfter:
+          type: integer
+          minimum: 1
       required:
         - error
         - code

@@ -2,129 +2,165 @@ export interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;
+  datePublished?: string;
 }
 
-export async function searchWeb(
-  query: string,
-  maxResults = 6,
-): Promise<WebSearchResult[]> {
+export class WebSearchError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 429 | 502 | 503 | 504,
+    readonly code: string,
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(message);
+    this.name = "WebSearchError";
+  }
+}
+
+function readRetryAfter(response: Response): number | undefined {
+  const value = response.headers.get("retry-after");
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.ceil(seconds);
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? undefined : Math.max(1, Math.ceil((date - Date.now()) / 1000));
+}
+
+export async function searchWeb(query: string, maxResults = 6): Promise<WebSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) {
-    throw new Error("Search query cannot be empty");
+    throw new WebSearchError("Enter a research question to search the web.", 400, "INVALID_QUERY");
   }
 
-  // 1. If Brave Search API key is provided, use Brave Search
-  const braveApiKey = process.env.BRAVE_SEARCH_API_KEY;
-  if (braveApiKey) {
-    try {
-      const braveUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(trimmed)}&count=${maxResults}`;
-      const response = await fetch(braveUrl, {
-        headers: {
-          Accept: "application/json",
-          "X-Subscription-Token": braveApiKey,
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (response.ok) {
-        const data = (await response.json()) as {
-          web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-        };
-        const items = data.web?.results || [];
-        if (items.length > 0) {
-          return items.slice(0, maxResults).map((item) => ({
-            title: item.title || "Source",
-            url: item.url || "",
-            snippet: item.description || "",
-          }));
-        }
-      }
-    } catch {
-      // Fallback to DuckDuckGo
-    }
+  const apiKey = process.env.LANGSEARCH_API_KEY;
+  if (!apiKey) {
+    throw new WebSearchError(
+      "Web research is not configured. Set LANGSEARCH_API_KEY as a server-side environment variable.",
+      503,
+      "SEARCH_NOT_CONFIGURED",
+    );
   }
 
-  // 2. Default & reliable live web search via DuckDuckGo HTML
+  let response: Response;
   try {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(trimmed)}`;
-    const response = await fetch(searchUrl, {
+    response = await fetch("https://api.langsearch.com/v1/web-search", {
+      method: "POST",
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
-      signal: AbortSignal.timeout(12_000),
+      body: JSON.stringify({
+        query: trimmed,
+        count: Math.max(1, Math.min(10, Math.floor(maxResults))),
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new WebSearchError("Web search timed out. Please try again.", 504, "SEARCH_TIMEOUT");
+    }
+    throw new WebSearchError("Web search is temporarily unavailable. Please try again.", 502, "SEARCH_UNAVAILABLE");
+  }
+
+  if (!response.ok) {
+    const retryAfterSeconds = response.status === 429 ? readRetryAfter(response) : undefined;
+    const isAuthError = response.status === 401 || response.status === 403;
+    throw new WebSearchError(
+      response.status === 429
+        ? "The web search service is rate-limited. Please wait before trying again."
+        : isAuthError
+          ? "The web search service rejected its server credentials. Check LANGSEARCH_API_KEY in Render."
+          : response.status === 400
+            ? "The web search service rejected the request. Check the query and search settings."
+            : response.status === 504
+              ? "The web search service timed out. Please try again."
+              : "The web search service could not complete this request.",
+      response.status === 429 ? 429 : isAuthError ? 503 : response.status === 504 ? 504 : 502,
+      response.status === 429 ? "SEARCH_RATE_LIMITED" : isAuthError ? "SEARCH_AUTH_FAILED" : response.status === 400 ? "SEARCH_INVALID_REQUEST" : response.status === 504 ? "SEARCH_TIMEOUT" : "SEARCH_PROVIDER_ERROR",
+      retryAfterSeconds,
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new WebSearchError("The web search service returned an unreadable response.", 502, "SEARCH_INVALID_RESPONSE");
+  }
+
+  if (!payload || typeof payload !== "object") {
+    throw new WebSearchError("The web search service returned an invalid response.", 502, "SEARCH_INVALID_RESPONSE");
+  }
+
+  const body = payload as {
+    code?: unknown;
+    message?: unknown;
+    msg?: unknown;
+    data?: { webPages?: { value?: unknown } };
+  };
+
+  if (body.code === undefined) {
+    throw new WebSearchError("The web search service returned an incomplete response.", 502, "SEARCH_INVALID_RESPONSE");
+  }
+  if (String(body.code) !== "200") {
+    const code = String(body.code);
+    const providerMessage = typeof body.message === "string" ? body.message : typeof body.msg === "string" ? body.msg : undefined;
+    throw new WebSearchError(
+      code === "429"
+        ? "The web search service is rate-limited. Please wait before trying again."
+        : providerMessage?.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").slice(0, 300) || "The search provider reported an error.",
+      code === "429" ? 429 : 502,
+      code === "429" ? "SEARCH_RATE_LIMITED" : "SEARCH_PROVIDER_ERROR",
+      code === "429" ? readRetryAfter(response) : undefined,
+    );
+  }
+
+  const rawResults = body.data?.webPages?.value;
+  if (!Array.isArray(rawResults)) {
+    throw new WebSearchError("The web search service returned an invalid results list.", 502, "SEARCH_INVALID_RESPONSE");
+  }
+
+  const results: WebSearchResult[] = rawResults
+    .slice(0, Math.max(1, Math.min(10, Math.floor(maxResults))))
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const result = item as {
+        name?: unknown;
+        url?: unknown;
+        snippet?: unknown;
+        text?: unknown;
+        datePublished?: unknown;
+      };
+      if (typeof result.name !== "string" || !result.name.trim() || typeof result.url !== "string") return [];
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(result.url);
+      } catch {
+        return [];
+      }
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) return [];
+
+      const snippet = typeof result.snippet === "string"
+        ? result.snippet
+        : typeof result.text === "string"
+          ? result.text
+          : "";
+
+      return [{
+        title: result.name.trim().slice(0, 300),
+        url: parsedUrl.toString(),
+        snippet: snippet.slice(0, 2000),
+        ...(typeof result.datePublished === "string"
+          ? { datePublished: result.datePublished.slice(0, 100) }
+          : {}),
+      }];
     });
 
-    if (!response.ok) {
-      throw new Error(`Web search provider returned HTTP ${response.status}`);
-    }
-
-    const html = await response.text();
-    const results: WebSearchResult[] = [];
-    const blocks = html.split(/class=\"result\s/);
-
-    for (let i = 1; i < blocks.length; i++) {
-      const block = blocks[i];
-      const titleMatch = block.match(
-        /<a[^>]+class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>([\s\S]*?)<\/a>/,
-      );
-      const snippetMatch = block.match(
-        /<a[^>]+class=\"result__snippet\"[^>]*>([\s\S]*?)<\/a>/,
-      );
-
-      if (titleMatch) {
-        let href = titleMatch[1];
-        const uddgMatch = href.match(/uddg=([^&]+)/);
-        if (uddgMatch) {
-          try {
-            href = decodeURIComponent(uddgMatch[1]);
-          } catch {
-            // Keep original if decoding fails
-          }
-        }
-
-        if (href.startsWith("http://") || href.startsWith("https://")) {
-          // Unescape HTML entities in title and snippet
-          const title = titleMatch[2]
-            .replace(/<[^>]+>/g, "")
-            .replace(/&amp;/g, "&")
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .trim();
-
-          const snippet = snippetMatch
-            ? snippetMatch[1]
-                .replace(/<[^>]+>/g, "")
-                .replace(/&amp;/g, "&")
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'")
-                .replace(/&lt;/g, "<")
-                .replace(/&gt;/g, ">")
-                .trim()
-            : "";
-
-          if (title && href) {
-            results.push({ title, url: href, snippet });
-          }
-        }
-      }
-
-      if (results.length >= maxResults) break;
-    }
-
-    if (results.length === 0) {
-      throw new Error(
-        `No web search results found for "${trimmed}". Please try a more specific topic or rephrasing your search.`,
-      );
-    }
-
-    return results;
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error("Web search could not be completed. Please try again shortly.");
+  if (!results.length) {
+    throw new WebSearchError("No usable web results were found. Try a more specific research question.", 502, "SEARCH_NO_RESULTS");
   }
+
+  return results;
 }

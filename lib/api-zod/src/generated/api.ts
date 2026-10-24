@@ -61,7 +61,11 @@ export const generateQuizBodyQuestionCountDefault = 5;
 export const generateQuizBodyQuestionCountMax = 30;
 
 export const generateQuizBodyDifficultyDefault = `medium`;
+export const generateQuizBodyPreviousQuestionsItemMax = 500;
+
 export const generateQuizBodyPreviousQuestionsMax = 60;
+
+
 
 export const GenerateQuizBody = zod.object({
   "title": zod.string().max(generateQuizBodyTitleMax).optional(),
@@ -69,7 +73,7 @@ export const GenerateQuizBody = zod.object({
   "questionType": zod.enum(['mcq', 'short_answer', 'mixed']).default(generateQuizBodyQuestionTypeDefault),
   "questionCount": zod.number().int().min(1).max(generateQuizBodyQuestionCountMax).default(generateQuizBodyQuestionCountDefault),
   "difficulty": zod.enum(['easy', 'medium', 'hard', 'mixed']).default(generateQuizBodyDifficultyDefault),
-  "previousQuestions": zod.array(zod.string().min(1).max(500)).max(generateQuizBodyPreviousQuestionsMax).optional()
+  "previousQuestions": zod.array(zod.string().min(1).max(generateQuizBodyPreviousQuestionsItemMax)).max(generateQuizBodyPreviousQuestionsMax).optional()
 })
 
 export const generateQuizResponseQuestionsItemTypeDefault = `mcq`;
@@ -190,7 +194,8 @@ export const ResearchTopicResponse = zod.object({
   "sources": zod.array(zod.object({
   "title": zod.string(),
   "url": zod.string(),
-  "snippet": zod.string().optional()
+  "snippet": zod.string().optional(),
+  "datePublished": zod.string().optional()
 }))
 })
 

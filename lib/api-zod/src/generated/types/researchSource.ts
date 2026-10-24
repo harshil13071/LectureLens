@@ -10,4 +10,5 @@ export interface ResearchSource {
   title: string;
   url: string;
   snippet?: string;
+  datePublished?: string;
 }

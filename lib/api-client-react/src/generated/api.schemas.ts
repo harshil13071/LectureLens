@@ -55,6 +55,11 @@ export interface QuizInput {
      */
   questionCount?: number;
   difficulty?: QuizInputDifficulty;
+  /**
+     * @maxItems 60
+     * @items.minLength 1
+     * @items.maxLength 500
+     */
   previousQuestions?: string[];
 }
 
@@ -198,6 +203,7 @@ export interface ResearchSource {
   title: string;
   url: string;
   snippet?: string;
+  datePublished?: string;
 }
 
 export interface ResearchResult {
@@ -214,5 +220,7 @@ export interface ResearchResult {
 export interface ApiError {
   error: string;
   code: string;
+  /** @minimum 1 */
+  retryAfter?: number;
 }
 
