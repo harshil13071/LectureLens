@@ -35,9 +35,9 @@ node_modules
 
 # misc
 /.sass-cache
-/.env
-/.env.local
-/.env.test.local
+.env
+.env.*
+!.env.example
 /connect.lock
 /coverage
 /libpeerconnection.log
